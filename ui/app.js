@@ -524,7 +524,7 @@
             { label: 'Measure', value: (r) => r.label },
             { label: 'Share', value: (r) => r.share, fmt: fmt.pct },
           ], [
-            { label: 'Raised within 24 hours of the send', share: div(k.revenue_day_1, k.revenue) },
+            { label: 'Raised within 24 hours of the send', share: div(k.revenue_day1, k.revenue) },
             { label: 'From monthly (recurring) gifts', share: div(k.recurring_revenue, k.revenue) },
             { label: 'From the top 10 emails', share: div(ty.top_emails.reduce((t, r) => t + (num(r.revenue) || 0), 0), k.revenue) },
           ].filter((r) => !isNaN(r.share))),

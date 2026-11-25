@@ -34,10 +34,7 @@ export default {
             ...messageMetrics(),
             m('delivered', 'sum(delivered)'),
             m('complaints', 'sum(complaints)'),
-            m('hard_bounces', 'sum(hard_bounces)'),
-            m('revenue_day_1', 'sum(attributed_revenue_day_1)', 'currency'),
-            m('recurring_revenue', 'sum(attributed_recurring_revenue)', 'currency'),
-            m('zero_revenue_messages', 'count(distinct case when attributed_revenue=0 then message_id end)')
+            m('hard_bounces', 'sum(hard_bounces)')
           ]
         }
       ]

@@ -18,6 +18,15 @@ test('every report is portable JSON that `report run` accepts', () => {
   }
 });
 
+test('no component repeats a metric or dimension name', () => {
+  for (const [key, def] of Object.entries(reports)) {
+    for (const s of def.sections) for (const c of s.components) {
+      const names = [...(c.dimensions || []), ...(c.metrics || [])].map((x) => x.name);
+      assert.equal(new Set(names).size, names.length, `${key}/${c.id}: repeated name in ${names.join(', ')}`);
+    }
+  }
+});
+
 test('EQL has no syntax the parser rejects', () => {
   for (const [key, def] of Object.entries(reports)) {
     const json = JSON.stringify(def);
