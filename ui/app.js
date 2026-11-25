@@ -102,6 +102,8 @@
     money: (v) => (isNaN(v) ? '—' : Math.abs(v) >= 1e5 ? (v < 0 ? '-$' : '$') + Math.round(Math.abs(v) / 1000).toLocaleString('en-US') + 'K' : '$' + Math.round(v).toLocaleString('en-US')),
     money2: (v) => (isNaN(v) ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })),
     int: (v) => (isNaN(v) ? '—' : Math.round(v).toLocaleString('en-US')),
+    // Same abbreviation rule as fmt.money, for counts: 100,000 and up reads as 482K.
+    count: (v) => (isNaN(v) ? '—' : Math.abs(v) >= 1e5 ? (v < 0 ? '-' : '') + Math.round(Math.abs(v) / 1000).toLocaleString('en-US') + 'K' : Math.round(v).toLocaleString('en-US')),
     pct: (v) => (isNaN(v) ? '—' : (v * 100).toFixed(v < 0.1 && v > -0.1 ? 1 : 0) + '%'),
     pct2: (v) => (isNaN(v) ? '—' : (v * 100).toFixed(2) + '%'),
     change: (v) => (isNaN(v) || !isFinite(v) ? '—' : (v > 0 ? '+' : '') + (v * 100).toFixed(0) + '%'),
@@ -156,22 +158,45 @@
     return el('details', { class: 'ef-alt' }, el('summary', { text: 'View chart data as a table' }), table(columns, rows));
   }
 
-  // Revenue by week (weeks start Monday): numbered bars with a data table.
-  function weekly(rows) {
-    const sorted = (rows || []).slice().sort((a, b) => String(a.week).localeCompare(String(b.week))).map((r, i) => ({ ...r, n: 'Wk ' + (i + 1) }));
-    return el('div', {}, bars(sorted, 'n', 'revenue', fmt.money, (v) => v),
-      dataTable([{ label: 'Week', value: (r) => r.n }, { label: 'Starts', value: (r) => r.week, fmt: fmt.day }, { label: 'Revenue', value: (r) => num(r.revenue), fmt: fmt.money }], sorted));
+  // Bars on a scale: gridlines with labels, no numbers on the bars, the exact value on hover.
+  // series: [{ key, label, color }] (several series sit side by side); xLabel(row, i) is the short axis text.
+  const niceMax = (v) => { if (!(v > 0)) return 1; const p = 10 ** Math.floor(Math.log10(v)); const f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
+  function scaledBars(rows, series, { xLabel, tip, format, reference, referenceLabel, over, height = 200 }) {
+    if (!rows.length) return el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' });
+    const vals = rows.flatMap((r) => series.map((x) => num(r[x.key]))).filter((v) => !isNaN(v));
+    const top = niceMax(Math.max(...vals, reference || 0, 1e-9) * 1.05);
+    const step = Math.ceil(rows.length / 18);
+    const grid = [0, 1, 2, 3, 4].map((g) => el('div', { class: 'ef-grid', style: `bottom:${g * 25}%` }, el('span', { class: 'ef-grid-label', text: format((top / 4) * g) })));
+    const refLine = reference != null && !isNaN(reference) ? el('div', { class: 'ef-ref', style: `bottom:${(reference / top) * 100}%` }, el('span', { text: referenceLabel })) : null;
+    const cols = rows.map((r, i) => el('div', { class: 'ef-bar-col ef-hovercol' + (i < rows.length * 0.15 ? ' ef-tip-left' : i > rows.length * 0.85 ? ' ef-tip-right' : ''), tabindex: '0' },
+      el('div', { class: 'ef-group' }, series.map((x) => {
+        const v = num(r[x.key]);
+        return el('div', { class: 'ef-bar', style: `height:${isNaN(v) ? 0 : Math.max(v > 0 ? 2 : 0, (v / top) * height)}px;background:${over && over(r, x) ? 'var(--color-bad)' : x.color}` });
+      })),
+      el('div', { class: 'ef-hover', role: 'tooltip', text: tip(r, i) })));
+    return el('div', { class: 'ef-chart' },
+      el('div', { class: 'ef-plot ef-has-axis', style: `height:${height}px` }, grid, refLine, el('div', { class: 'ef-bars ef-scaled', style: `height:${height}px` }, cols)),
+      el('div', { class: 'ef-axis ef-has-axis' }, rows.map((r, i) => el('div', { text: i % step === 0 ? xLabel(r, i) : '' }))),
+      series.length > 1 ? legend(series.map((x) => ({ label: x.label, color: x.color }))) : null);
   }
 
-  // Weekly rate line with a reference line (a limit or the period average); weeks over `flag` x reference are listed.
+  // Revenue by week: week number on the axis, the total on hover only.
+  function weekly(rows) {
+    const sorted = (rows || []).slice().sort((a, b) => String(a.week).localeCompare(String(b.week))).map((r, i) => ({ ...r, n: i + 1, v: num(r.revenue) }));
+    return el('div', {},
+      scaledBars(sorted, [{ key: 'v', label: 'Revenue', color: PALETTE[0] }], { xLabel: (r) => String(r.n), tip: (r) => `Week ${r.n} (from ${fmt.day(r.week)}): ${fmt.money(r.v)}`, format: fmt.money }),
+      dataTable([{ label: 'Week', value: (r) => r.n }, { label: 'Starts', value: (r) => r.week, fmt: fmt.day }, { label: 'Revenue', value: (r) => r.v, fmt: fmt.money }], sorted));
+  }
+
+  // Weekly rate as bars on a scale. A reference line marks a limit or the average; weeks over `flagOver` turn red and are listed.
   function rateWeeks(rows, rateOf, { reference, referenceLabel, flagOver }) {
-    const sorted = (rows || []).slice().sort((a, b) => String(a.week).localeCompare(String(b.week))).map((r, i) => ({ ...r, n: 'Wk ' + (i + 1), rate: rateOf(r) }));
+    const sorted = (rows || []).slice().sort((a, b) => String(a.week).localeCompare(String(b.week))).map((r, i) => ({ ...r, n: i + 1, rate: rateOf(r) }));
     const ok = sorted.filter((r) => !isNaN(r.rate));
     if (!ok.length) return el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' });
     const spikes = flagOver ? ok.filter((r) => r.rate > flagOver) : [];
     return el('div', {},
-      lineChart(sorted.map((r) => r.n), [{ label: 'Weekly rate', color: PALETTE[0], points: sorted.map((r) => r.rate) }, { label: referenceLabel, color: PALETTE[4], dashed: '5 4', points: sorted.map(() => reference) }], fmt.pct2),
-      spikes.length ? el('p', { class: 'ef-note' }, el('b', { text: 'Weeks to look at. ' }), spikes.map((r) => `${r.n} (starts ${fmt.day(r.week)}, ${fmt.pct2(r.rate)})`).join('; ') + '.') : null,
+      scaledBars(sorted, [{ key: 'rate', label: 'Weekly rate', color: PALETTE[0] }], { xLabel: (r) => String(r.n), tip: (r) => `Week ${r.n} (from ${fmt.day(r.week)}): ${fmt.pct2(r.rate)}`, format: fmt.pct2, reference, referenceLabel, over: flagOver ? (r) => r.rate > flagOver : null }),
+      spikes.length ? el('p', { class: 'ef-note' }, el('b', { text: 'Weeks to look at. ' }), spikes.map((r) => `Week ${r.n} (starts ${fmt.day(r.week)}, ${fmt.pct2(r.rate)})`).join('; ') + '.') : null,
       dataTable([{ label: 'Week', value: (r) => r.n }, { label: 'Starts', value: (r) => r.week, fmt: fmt.day }, { label: 'Rate', value: (r) => r.rate, fmt: fmt.pct2 }], sorted));
   }
 
@@ -487,8 +512,8 @@
             tile('Raised per $1 spent', rpd(k), rpd(l), fmt.money2),
             tile('Cost per gift', div(k.spend, k.gifts), div(l.spend, l.gifts), fmt.money2, { lowerIsBetter: true }),
             tile('New people reached', k.new_people, l.new_people, fmt.int, { note: `${fmt.money2(div(k.spend, k.new_people))} each · last year ${fmt.int(num(l.new_people))}` }),
-            tile('Impressions', k.impressions, l.impressions, fmt.int, { note: `${fmt.money2(div(num(k.spend) * 1000, k.impressions))} per 1,000 (CPM) · last year ${fmt.int(num(l.impressions))}` }),
-            tile('Clicks', k.clicks, l.clicks, fmt.int, { note: `${fmt.pct2(div(k.clicks, k.impressions))} of impressions (CTR) · last year ${fmt.int(num(l.clicks))}` }),
+            tile('Impressions', k.impressions, l.impressions, fmt.count, { note: `${fmt.money2(div(num(k.spend) * 1000, k.impressions))} per 1,000 (CPM) · last year ${fmt.count(num(l.impressions))}` }),
+            tile('Clicks', k.clicks, l.clicks, fmt.count, { note: `${fmt.pct2(div(k.clicks, k.impressions))} of impressions (CTR) · last year ${fmt.count(num(l.clicks))}` }),
             tile('Cost per click', div(k.spend, k.clicks), div(l.spend, l.clicks), fmt.money2, { lowerIsBetter: true, note: `Spend ÷ clicks · last year ${fmt.money2(div(l.spend, l.clicks))}` })),
           card('ads-acquisition', 'Acquisition from ads', 'New donors and email sign-ups ads brought in during the selected period, and what each cost. Compare with bought and rented lists on the Acquisition tab.', (() => {
             const box = el('div', {}, el('p', { class: 'ef-empty', text: 'Counting new donors from ads. This can take up to a minute the first time.' }));
@@ -783,7 +808,7 @@
         ].filter(Boolean).map((r) => ({ ...r, severity: r.rev === Infinity ? 'High' : sev(r.rev, r.cap) }));
         const ORDER = { High: 0, Medium: 1, Low: 2 };
         issues.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || (b.rev === Infinity ? 1 : 0) - (a.rev === Infinity ? 1 : 0) || b.rev - a.rev);
-        const trendMonths = [...byMonth.values()].sort((a, b) => num(a.month_no) - num(b.month_no));
+        const trendMonths = [...byMonth.values()].sort((a, b) => num(a.month_no) - num(b.month_no)).map((m) => ({ ...m, ty_share: unread(m.ty), ly_share: unread(m.ly), ty_dollars: num(m.ty?.unreadable_revenue), ly_dollars: num(m.ly?.unreadable_revenue) }));
         const highCount = issues.filter((i) => i.severity === 'High').length;
         return [
           lede(`${fmt.pct(1 - share(t, 'unreadable'))} of this year's revenue can be traced to a channel. The ${fmt.pct(share(t, 'unreadable'))} (${fmt.money(num(t.unreadable_revenue))}) that can't comes from gifts with no source code or a code that reads as no channel.${highCount ? ` ${highCount} issue${highCount > 1 ? 's are' : ' is'} rated high below.` : ''} Gifts are counted for the year to date, whatever period is picked.`),
@@ -800,9 +825,9 @@
             { label: 'Recommended fix', value: (r) => r.fix },
             { label: 'Owner', value: (r) => r.owner },
           ], issues, 'No issues found.', 'ef-table-text')),
-          card('dq-trend', 'Is coding getting better?', 'Share of each month\'s revenue with no readable channel, this year against last year. Lower is better.', trendMonths.length ? el('div', {},
-            lineChart(trendMonths.map((m) => MONTH_NAMES[num(m.month_no) - 1]), [{ label: 'This year', color: PALETTE[0], points: trendMonths.map((m) => unread(m.ty)) }, { label: 'Last year', color: PALETTE[4], dashed: '5 4', points: trendMonths.map((m) => unread(m.ly)) }], fmt.pct),
-            dataTable([{ label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] }, { label: 'This year', value: (r) => unread(r.ty), fmt: fmt.pct }, { label: 'Last year', value: (r) => unread(r.ly), fmt: fmt.pct }], trendMonths)) : el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' })),
+          card('dq-trend', 'Is coding getting better?', 'Share of each month\'s revenue with no readable channel, this year beside last year. Lower is better.', trendMonths.length ? el('div', {},
+            scaledBars(trendMonths, [{ key: 'ly_share', label: 'Last year', color: PALETTE[4] }, { key: 'ty_share', label: 'This year', color: PALETTE[0] }], { xLabel: (r) => MONTH_NAMES[num(r.month_no) - 1], tip: (r) => `${MONTH_NAMES[num(r.month_no) - 1]}: this year ${fmt.pct(r.ty_share)}, last year ${fmt.pct(r.ly_share)}`, format: fmt.pct }),
+            dataTable([{ label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] }, { label: 'This year', value: (r) => r.ty_share, fmt: fmt.pct }, { label: 'Last year', value: (r) => r.ly_share, fmt: fmt.pct }], trendMonths)) : el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' })),
           card('dq-recs', 'Recommendations for the client team', 'The issues above, grouped by when to fix them: high this week, medium this month, low this quarter.', ...[['This week', 'High'], ['This month', 'Medium'], ['This quarter', 'Low']].map(([label, severity]) => {
             const list = issues.filter((i) => i.severity === severity);
             return el('div', {}, el('h3', { class: 'ef-h2', text: label }), list.length ? el('ul', {}, list.map((i) => el('li', { text: `${i.fix} (${i.owner}).` }))) : el('p', { class: 'ef-empty', text: 'Nothing at this level.' }));
@@ -820,11 +845,9 @@
             { label: 'Gifts', value: (r) => num(r.gifts), fmt: fmt.int },
             { label: 'Raised', value: (r) => num(r.revenue), fmt: fmt.money },
           ], off, 'Every source code this year follows the convention.')),
-          card('dq-months', 'Revenue with no readable channel, by month', 'Share of each month\'s revenue that has no source code, or a code that reads as no channel.', table([
-            { label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] },
-            { label: 'This year', value: (r) => unread(r.ty), fmt: fmt.pct },
-            { label: 'Last year', value: (r) => unread(r.ly), fmt: fmt.pct },
-          ], [...byMonth.values()].sort((a, b) => num(a.month_no) - num(b.month_no)))),
+          card('dq-months', 'Revenue with no readable channel, by month', 'Dollars each month with no source code, or a code that reads as no channel, this year beside last year.', trendMonths.length ? el('div', {},
+            scaledBars(trendMonths, [{ key: 'ly_dollars', label: 'Last year', color: PALETTE[4] }, { key: 'ty_dollars', label: 'This year', color: PALETTE[0] }], { xLabel: (r) => MONTH_NAMES[num(r.month_no) - 1], tip: (r) => `${MONTH_NAMES[num(r.month_no) - 1]}: this year ${fmt.money(r.ty_dollars)} (${fmt.pct(r.ty_share)}), last year ${fmt.money(r.ly_dollars)} (${fmt.pct(r.ly_share)})`, format: fmt.money }),
+            dataTable([{ label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] }, { label: 'This year', value: (r) => r.ty_dollars, fmt: fmt.money }, { label: 'Share', value: (r) => r.ty_share, fmt: fmt.pct }, { label: 'Last year', value: (r) => r.ly_dollars, fmt: fmt.money }, { label: 'Share', value: (r) => r.ly_share, fmt: fmt.pct }], trendMonths)) : el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' })),
           card('dq-pages', 'Pages taking gifts with no source code', 'The 10 pages (for ActBlue, the contribution form) with the most uncoded revenue this year.', table([
             { label: 'Page', value: (r) => r.page },
             { label: 'Gifts', value: (r) => num(r.gifts), fmt: fmt.int },

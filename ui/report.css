@@ -168,3 +168,19 @@ body[data-auth="out"] .fr-period, body[data-auth="checking"] .fr-period { displa
 .ef-table-text th, .ef-table-text td { text-align: left !important; white-space: normal !important; vertical-align: top; min-width: 0 !important; }
 .ef-table-text td:nth-child(3), .ef-table-text td:nth-child(5) { min-width: 200px !important; }
 .ef-details.ef-card { padding: var(--cds-pad-md) var(--cds-pad-lg); }
+
+/* Scaled bars: gridlines, hover value, optional reference line */
+.ef-plot { position: relative; }
+.ef-plot .ef-grid { z-index: 0; }
+.ef-bars.ef-scaled { position: relative; z-index: 1; gap: 2px; border-bottom: 1px solid var(--cds-chart-axis); }
+.ef-group { display: flex; align-items: flex-end; justify-content: center; gap: 1px; width: 86%; height: 100%; }
+.ef-group .ef-bar { flex: 1 1 0; width: auto; min-width: 2px; max-width: 28px; }
+.ef-hovercol { cursor: default; outline-offset: 1px; }
+.ef-hovercol:hover, .ef-hovercol:focus { background: color-mix(in srgb, var(--color-fg) 6%, transparent); }
+.ef-hover { display: none; position: absolute; top: 2px; left: 50%; transform: translateX(-50%); background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: 6px 8px; font-size: 12px; white-space: nowrap; z-index: 6; pointer-events: none; }
+.ef-tip-left .ef-hover { left: 0; transform: none; }
+.ef-tip-right .ef-hover { left: auto; right: 0; transform: none; }
+.ef-hovercol:hover .ef-hover, .ef-hovercol:focus .ef-hover { display: block; }
+.ef-ref { position: absolute; left: 38px; right: 0; height: 0; border-top: 2px dashed var(--color-fg-muted); z-index: 2; pointer-events: none; }
+.ef-ref span { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--color-fg-muted); background: var(--color-panel); padding: 0 4px; }
+.ef-plot.ef-has-axis { padding-left: 38px; box-sizing: border-box; }
