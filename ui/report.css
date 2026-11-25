@@ -184,3 +184,8 @@ body[data-auth="out"] .fr-period, body[data-auth="checking"] .fr-period { displa
 .ef-ref { position: absolute; left: 38px; right: 0; height: 0; border-top: 2px dashed var(--color-fg-muted); z-index: 2; pointer-events: none; }
 .ef-ref span { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--color-fg-muted); background: var(--color-panel); padding: 0 4px; }
 .ef-plot.ef-has-axis { padding-left: 38px; box-sizing: border-box; }
+
+/* Donor retention strips */
+.ef-ret-row { margin-top: var(--cds-gap-sm); }
+.ef-ret-strip { display: flex; height: 26px; margin-top: 4px; }
+.ef-ret-strip span { display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; font-size: var(--cds-font-size-caption); font-weight: 700; }

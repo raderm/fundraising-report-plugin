@@ -87,6 +87,11 @@ function toSqlite(text) {
 }
 // What the MariaDB-only report queries return (the real ones run on engine9).
 const CANNED = [
+  [/^WITH p AS .*SUM\(a0\) AS donors_ty/s, [{ donors_ty: 140465, returning_ty: 62340, new_ty: 31460, donors_ly: 151300, returning_ly: 65800, new_ly: 36900, donors_py: 151400, new_py: 38000, new_ly_again: 8400, new_py_again: 9160, data_start_year: 2015, data_start: '2015-03-02' }]],
+  [/^WITH p AS .*SELECT month, SUM\(kind/s, [{ month: '2026-10-01', started: '713', stopped: '272' }, { month: '2026-11-01', started: '425', stopped: '0' }]],
+  [/^WITH p AS .*YEAR\(p\.f\) AS year/s, [{ year: 2019, donors: 41960, active: 4331, revenue: '655318.55', data_start: 2015 }, { year: 2025, donors: 949, active: 227, revenue: '54995.37', data_start: 2015 }, { year: 2026, donors: 6859, active: 4599, revenue: '427047.96', data_start: 2015 }]],
+  [/^WITH fp AS /, [{ channel: 'Email', donors: 3595, active: 953, revenue: '108998.77' }, { channel: 'Text (SMS)', donors: 2565, active: 1528, revenue: '160235.99' }, { channel: 'Meta ads', donors: 284, active: 207, revenue: '16566.81' }]],
+  [/^SELECT SUM\(a_ty\)/, [{ base_ty: '5036', kept_ty: '3979', base_ly: '9268', kept_ly: '3606' }]],
   [/^WITH fg AS .*ORDER BY donors DESC LIMIT 12$/s, [{ source: 'LOC_EM_FR_2026', channel: 'Email', donors: 900, first_amt: '25000', later_amt: '30000', gave_again: '400', started_monthly: '30', active_90: '300' }]],
   [/^WITH fg AS .*DATE_FORMAT\(fg\.fts/s, [
     { month: '2025-11-01', channel: 'Email', donors: 1800, first_amt: '30000', later_amt: '52000', gave_again: '800', started_monthly: '2', active_90: '100' },
@@ -147,7 +152,7 @@ await page.exposeFunction('__sql', runSql);
 const out = {};
 await page.goto('http://localhost:3005/');
 await page.waitForSelector('body[data-auth="in"]');
-await page.waitForSelector('#tab .ef-tiles');
+await page.waitForSelector('#tab .ef-tiles', { timeout: 8000 }).catch(async (e) => { console.log('PAGE ERRORS', errors, (await page.textContent('#tab')).slice(0, 400)); throw e; });
 out.revenueTile = await page.textContent('#tab .ef-tiles .ef-card:nth-child(1) .ef-tile-value');
 out.newDonors = await page.textContent('#tab .ef-tiles .ef-card:nth-child(3) .ef-tile-value');
 out.lede = await page.textContent('#tab .ef-lede');
@@ -187,7 +192,7 @@ await page.waitForSelector('#transactions-summary .ef-sum-head');
 out.summary = await page.textContent('#transactions-summary .ef-sum-head');
 
 // Every tab renders.
-for (const tab of ['scorecard', 'email', 'sms', 'ads', 'acquisition', 'recurring', 'dq']) {
+for (const tab of ['scorecard', 'email', 'sms', 'ads', 'acquisition', 'dq']) {
   await page.click(`.ef-tab[data-tab="${tab}"]`);
   await page.waitForFunction((t) => document.querySelector('#tab h1')?.textContent && !document.querySelector('#loading') && location.hash === '#' + t, tab);
   out[tab] = (await page.textContent('#tab .ef-lede')) || (await page.textContent('#tab'));

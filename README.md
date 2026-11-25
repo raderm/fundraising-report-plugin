@@ -71,10 +71,10 @@ The end-to-end test runs the SQL the page sends in an in-memory SQLite database,
 | `…:sms` | SMS |
 | `…:advertising` | Advertising |
 | `scorecard/queries.js` (SQL, not a report definition) | Scorecard, Acquisition, Data Quality |
-| `…:recurring` | Recurring Donors |
+| `…:recurring` | The Recurring donors section of All Donations |
 
 The Scorecard (year-end projection by channel) and Data Quality (coding gaps, year to date) tabs run as plain read-only SQL through `sql`, because they need REGEXP, window functions and per-year comparisons that EQL reports can't express. Data Quality is computed live; the original dashboard rebuilt it weekly from a snapshot.
 
 Acquisition (new donors by first-gift channel) and the Scorecard cost, new-donor and list-growth figures use the same read-only SQL. The new-donor queries scan every gift, so the first load can take 15 to 40 seconds on a large account; results are cached for the session.
 
-Not ported yet: donor retention, recurring cohorts, and the Acquisition tab (email sign-ups matched to donors).
+Donor retention is a section of All Donations (one read-only query comparing each donor across this period, the same dates last year and the year before).

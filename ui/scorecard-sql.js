@@ -118,5 +118,47 @@ const ACQ_COST = (ty, ly) => `SELECT CASE WHEN date >= '${ymd(ty.start)}' AND da
 /** Email sign-ups in the period by the type part of their source code (LOC_EM_… reads as EM), with how many are still subscribed. */
 const ACQ_SIGNUPS = (ty, ly) => `SELECT CASE WHEN date_created >= '${ymd(ty.start)}' AND date_created < '${ymd(ty.end)}' THEN 'ty' ELSE 'ly' END AS period, CASE WHEN COALESCE(source_code, '') = '' THEN '(no source code)' WHEN source_code REGEXP '^[A-Za-z0-9]{2,8}_[^_]+' THEN UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(source_code, '_', 2), '_', -1)) ELSE '(other format)' END AS source, COUNT(*) AS signups, SUM(subscription_status = 'Subscribed') AS still_subscribed FROM acoustic_jsv_person WHERE (date_created >= '${ymd(ty.start)}' AND date_created < '${ymd(ty.end)}') OR (date_created >= '${ymd(ly.start)}' AND date_created < '${ymd(ly.end)}') GROUP BY 1, 2`;
 
-window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS };
+// ---- Donor retention (a section of All Donations) ---------------------------------
+// One row per person: the first gift on record and whether they gave in the period (a0),
+// in the same dates a year earlier (a1) and in the same dates two years earlier (a2).
+// Windows are checked dates, end exclusive; only `ty` and `ly` come from the page.
+
+/**
+ * Donors in the period and the same dates last year, split into returning (also gave a year
+ * before), came back (gave earlier, but not then) and new (first gift ever). Also last year's
+ * donors who gave again, new donors who gave again, and the same for the year before.
+ */
+const RETENTION = (ty, ly) => {
+  const t0 = `'${ymd(ty.start)}'`, t1 = `'${ymd(ty.end)}'`, l0 = `'${ymd(ly.start)}'`, l1 = `'${ymd(ly.end)}'`;
+  const m0 = `(${l0} - INTERVAL 1 YEAR)`, m1 = `(${l1} - INTERVAL 1 YEAR)`;
+  return `WITH p AS (SELECT person_id, MIN(ts) AS f, MAX(ts >= ${t0} AND ts < ${t1}) AS a0, MAX(ts >= ${l0} AND ts < ${l1}) AS a1, MAX(ts >= ${m0} AND ts < ${m1}) AS a2 FROM \`transaction\` WHERE person_id IS NOT NULL AND ts < ${t1} GROUP BY person_id) SELECT SUM(a0) AS donors_ty, SUM(a0 AND a1) AS returning_ty, SUM(a0 AND f >= ${t0}) AS new_ty, SUM(a1) AS donors_ly, SUM(a1 AND a2) AS returning_ly, SUM(a1 AND f >= ${l0}) AS new_ly, SUM(a2) AS donors_py, SUM(a2 AND f >= ${m0}) AS new_py, SUM(a1 AND f >= ${l0} AND a0) AS new_ly_again, SUM(a2 AND f >= ${m0} AND a1) AS new_py_again, YEAR(MIN(f)) AS data_start_year, DATE_FORMAT(MIN(f), '%Y-%m-%d') AS data_start FROM p`;
+};
+
+// ---- Recurring donors (folded into All Donations) --------------------------------
+// A monthly donor counts as active with a payment in the last 35 days, and as stopped
+// once 45 days pass with no payment. Windows are checked dates, as for Acquisition.
+
+const REC = `\`transaction\` WHERE recurs_id > 0 AND person_id IS NOT NULL`;
+const REC_PEOPLE = `SELECT person_id, MIN(ts) AS f, MAX(ts) AS l FROM ${REC} GROUP BY person_id`;
+
+/** Monthly donors who started and who stopped, by month, for the last 24 months. */
+const REC_FLOW = `WITH p AS (${REC_PEOPLE}) SELECT month, SUM(kind = 's') AS started, SUM(kind = 'e') AS stopped FROM (SELECT DATE_FORMAT(f, '%Y-%m-01') AS month, 's' AS kind FROM p WHERE f >= DATE_FORMAT(CURDATE() - INTERVAL 23 MONTH, '%Y-%m-01') UNION ALL SELECT DATE_FORMAT(l, '%Y-%m-01') AS month, 'e' AS kind FROM p WHERE l >= DATE_FORMAT(CURDATE() - INTERVAL 23 MONTH, '%Y-%m-01') AND l < CURDATE() - INTERVAL 45 DAY) e GROUP BY month ORDER BY month`;
+
+/** Monthly donors by the year of their first monthly payment, with who still gives and what they gave in the period. */
+const REC_COHORTS = (ty) => `WITH p AS (${REC_PEOPLE}), r AS (SELECT person_id, SUM(amount) AS rev FROM ${REC} AND ts >= '${ymd(ty.start)}' AND ts < '${ymd(ty.end)}' GROUP BY person_id) SELECT YEAR(p.f) AS year, COUNT(*) AS donors, SUM(p.l >= CURDATE() - INTERVAL 35 DAY) AS active, ROUND(COALESCE(SUM(r.rev), 0), 2) AS revenue, (SELECT MIN(YEAR(ts)) FROM \`transaction\`) AS data_start FROM p LEFT JOIN r ON r.person_id = p.person_id GROUP BY 1 ORDER BY 1`;
+
+/** Monthly donors by the channel of their first monthly payment. */
+const REC_CHANNELS = (ty) => `WITH fp AS (SELECT person_id, MIN(ch) AS ch FROM (SELECT x.person_id, ${CHANNEL_CASE} AS ch FROM (${GIFT_ROWS} JOIN (SELECT person_id, MIN(ts) AS fts FROM ${REC} GROUP BY person_id) f ON f.person_id = m.person_id AND f.fts = m.ts AND m.recurs_id > 0) x) y GROUP BY person_id), p AS (${REC_PEOPLE}), r AS (SELECT person_id, SUM(amount) AS rev FROM ${REC} AND ts >= '${ymd(ty.start)}' AND ts < '${ymd(ty.end)}' GROUP BY person_id) SELECT fp.ch AS channel, COUNT(*) AS donors, SUM(p.l >= CURDATE() - INTERVAL 35 DAY) AS active, ROUND(COALESCE(SUM(r.rev), 0), 2) AS revenue FROM fp JOIN p ON p.person_id = fp.person_id LEFT JOIN r ON r.person_id = fp.person_id GROUP BY 1`;
+
+/**
+ * Of the monthly donors active on January 1 (a payment in the 35 days before), how many are still
+ * giving at the end of the period. Run for this year and for last year on the same dates.
+ */
+const REC_KEPT = (ty, ly) => {
+  const jan = (w) => { const d = new Date(`${ymd(w.end)}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); return `${d.getUTCFullYear()}-01-01`; };
+  const one = (tag, w) => `MAX(ts >= '${jan(w)}' - INTERVAL 35 DAY AND ts < '${jan(w)}') AS a_${tag}, MAX(ts >= '${ymd(w.end)}' - INTERVAL 35 DAY AND ts < '${ymd(w.end)}') AS k_${tag}`;
+  return `SELECT SUM(a_ty) AS base_ty, SUM(a_ty AND k_ty) AS kept_ty, SUM(a_ly) AS base_ly, SUM(a_ly AND k_ly) AS kept_ly FROM (SELECT person_id, ${one('ty', ty)}, ${one('ly', ly)} FROM ${REC} AND ts >= '${jan(ly)}' - INTERVAL 35 DAY GROUP BY person_id) z`;
+};
+
+window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS, RETENTION, REC, REC_PEOPLE, REC_FLOW, REC_COHORTS, REC_CHANNELS, REC_KEPT };
 })();

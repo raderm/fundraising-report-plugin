@@ -318,15 +318,130 @@
     return state.cache.get(cacheKey);
   }
 
+  // ---- Donor retention (a section of All Donations) -------------------------------
+  function retentionCard(r, w) {
+    const sub = 'Who is giving in the selected period, compared with who gave in the same dates a year earlier. The bars split this period\'s donors into returning (also gave in those dates last year), came back (gave before, but not then) and new (first gift ever).';
+    if (!r) return card('tx-retention', 'Donor retention', sub, el('p', { class: 'ef-empty', text: 'Retention could not be worked out just now. Try again in a moment.' }));
+    const d = (k) => num(r[k]);
+    const start = String(r.data_start || '').slice(0, 10);
+    const shift = (day, years) => { const t = new Date(`${day}T00:00:00Z`); t.setUTCFullYear(t.getUTCFullYear() - years); return t.toISOString().slice(0, 10); };
+    if (!d('donors_ly') || !start || start >= w.ly.end) {
+      return card('tx-retention', 'Donor retention', sub, el('p', { class: 'ef-note', text: `There are no gift records for the same dates last year (records start ${start ? fmt.day(start) : 'later than that'}), so there is nothing to compare this period's donors with yet.` }));
+    }
+    const partial = start > w.ly.start;
+    const haveYearBefore = start <= shift(w.ly.start, 1);
+    const retTy = div(d('returning_ty'), d('donors_ly'));
+    const retLy = haveYearBefore ? div(d('returning_ly'), d('donors_py')) : NaN;
+    const firstTy = div(d('new_ly_again'), d('new_ly'));
+    const firstLy = haveYearBefore ? div(d('new_py_again'), d('new_py')) : NaN;
+    const cameTy = d('donors_ty') - d('returning_ty') - d('new_ty');
+    const cameLy = d('donors_ly') - d('returning_ly') - d('new_ly');
+    const lapsedTy = d('donors_ly') - d('returning_ty');
+    const lapsedLy = haveYearBefore ? d('donors_py') - d('returning_ly') : NaN;
+    const pct1 = (v) => (isNaN(v) ? '—' : `${(v * 100).toFixed(1)}%`);
+    const earlier = (v, f) => (isNaN(v) ? '' : ` · a year earlier ${f(v)}`);
+    const series = [
+      { label: 'Returning', color: PALETTE[0], text: '#fff' },
+      { label: 'Came back', color: PALETTE[3], text: '#fff' },
+      { label: 'New', color: PALETTE[2], text: '#212529' }];
+    const strip = (label, vals, total) => el('div', { class: 'ef-ret-row' },
+      el('div', { class: 'ef-note', text: `${label} · ${fmt.int(total)} donors` }),
+      el('div', { class: 'ef-ret-strip', role: 'img', 'aria-label': `${label}: ${series.map((x, i) => `${x.label} ${fmt.int(vals[i])}`).join(', ')}` },
+        series.map((x, i) => { const share = div(vals[i], total); return el('span', { style: `width:${(isNaN(share) ? 0 : share * 100).toFixed(2)}%;background:${x.color};color:${x.text}`, title: `${x.label}: ${fmt.int(vals[i])}`, text: share >= 0.08 ? `${x.label} ${fmt.pct(share)}` : '' }); })));
+    return card('tx-retention', 'Donor retention', sub,
+      tiles(
+        tile('Donor retention', retTy, retLy, pct1, { note: `Of ${fmt.int(d('donors_ly'))} donors last year${earlier(retLy, pct1)}` }),
+        tile('First-year retention', firstTy, firstLy, pct1, { note: `Of ${fmt.int(d('new_ly'))} new donors last year${earlier(firstLy, pct1)}` }),
+        tile('Came back', cameTy, cameLy, fmt.int, { note: `Lapsed donors who gave again · last year ${fmt.int(cameLy)}` }),
+        tile('Lapsed', lapsedTy, lapsedLy, fmt.int, { lowerIsBetter: true, note: `Last year's donors who haven't given again${earlier(lapsedLy, fmt.int)}` })),
+      legend(series.map((x) => ({ label: x.label, color: x.color }))),
+      strip('This period', [d('returning_ty'), cameTy, d('new_ty')], d('donors_ty')),
+      strip('Same dates last year', [d('returning_ly'), cameLy, d('new_ly')], d('donors_ly')),
+      partial ? el('p', { class: 'ef-note', text: `Gift records start ${fmt.day(start)}, partway through last year's dates, so retention compares against only part of last year's donors.` }) : null,
+      !haveYearBefore ? el('p', { class: 'ef-note', text: 'Gift records start after the dates a year before last, so the "a year earlier" comparisons are left out.' }) : null);
+  }
+
+  // ---- Recurring donors (a section of All Donations) ----------------------------
+  async function loadRecurring(w) {
+    const today = new Date();
+    const { end } = w.ty;
+    const optional = (p) => p.catch(() => null);
+    const [[ty, ly], active, months, newTy, newLy, flow, cohorts, channels, kept] = await Promise.all([
+      both('recurring', w),
+      run('recurring', { start: iso(addDays(new Date(end + 'T00:00:00'), -35)), end }),
+      run('recurring', { start: iso(new Date(today.getFullYear(), today.getMonth() - 23, 1)), end }),
+      firstGifts('new_monthly_donors', w.ty),
+      firstGifts('new_monthly_donors', w.ly),
+      optional(query('REC_FLOW')), optional(queryWith('REC_COHORTS', w)), optional(queryWith('REC_CHANNELS', w)), optional(queryWith('REC_KEPT', w)),
+    ]);
+    return { ty, ly, active, months, nm: [num(newTy.new_donors?.[0]?.new_donors), num(newLy.new_donors?.[0]?.new_donors)], flow, cohorts, channels, kept: kept?.[0] || null };
+  }
+
+  function recurringCards({ ty, ly, active, months, nm, flow, cohorts, channels, kept }) {
+    const k = ty.kpis[0] || {}, l = ly.kpis[0] || {}, a = active.kpis[0] || {};
+    const keptTy = kept ? div(kept.kept_ty, kept.base_ty) : NaN, keptLy = kept ? div(kept.kept_ly, kept.base_ly) : NaN;
+    const monthKey = (v) => String(v).slice(0, 7);
+    const activeRows = months.monthly.slice().sort((a2, b) => String(a2.month).localeCompare(String(b.month)));
+    const flowBy = new Map((flow || []).map((r) => [monthKey(r.month), r]));
+    const rows = activeRows.map((r) => ({ month: String(r.month).slice(0, 10), donors: num(r.donors), started: num(flowBy.get(monthKey(r.month))?.started), stopped: num(flowBy.get(monthKey(r.month))?.stopped) }));
+    const cohortTable = (label, data, empty) => {
+      const total = data.reduce((t, r) => ({ donors: t.donors + r.donors, active: t.active + r.active, revenue: t.revenue + r.revenue }), { donors: 0, active: 0, revenue: 0 });
+      const all = [...data, { ...total, label: 'All', bold: true }];
+      return table([
+        { label, value: (r) => r.label },
+        { label: 'Donors', value: (r) => r.donors, fmt: fmt.int },
+        { label: 'Still active', value: (r) => r.active, fmt: fmt.int },
+        { label: 'Kept', value: (r) => div(r.active, r.donors), fmt: fmt.pct },
+        { label: 'Revenue in period', value: (r) => r.revenue, fmt: fmt.money },
+        { label: 'Share', value: (r) => div(r.revenue, total.revenue), fmt: fmt.pct },
+      ], data.length ? all : [], empty);
+    };
+    // By start year: the latest eight years, with anything earlier folded into the first of them.
+    const years = (cohorts || []).map((r) => ({ year: num(r.year), donors: num(r.donors), active: num(r.active), revenue: num(r.revenue), dataStart: num(r.data_start) }));
+    const keepFrom = years.length > 8 ? years[years.length - 8].year : -Infinity;
+    const folded = years.length > 8 ? (() => {
+      const out = [];
+      const early = years.filter((r) => r.year <= keepFrom);
+      out.push({ label: `${keepFrom} and earlier`, donors: early.reduce((t, r) => t + r.donors, 0), active: early.reduce((t, r) => t + r.active, 0), revenue: early.reduce((t, r) => t + r.revenue, 0) });
+      for (const r of years.filter((x) => x.year > keepFrom)) out.push({ ...r, label: String(r.year) });
+      return out;
+    })() : years.map((r) => ({ ...r, label: String(r.year) }));
+    const dataStart = years[0]?.dataStart;
+    const CH = { 'Text (SMS)': 'Texts', 'Meta ads': 'Paid ads', 'Google ads': 'Paid ads', 'Paid ads (coded)': 'Paid ads', 'Social media': 'Social', 'Other source code': 'Other' };
+    const byChannel = new Map();
+    for (const r of channels || []) {
+      const name = CH[r.channel] || r.channel;
+      const g = byChannel.get(name) || { label: name, donors: 0, active: 0, revenue: 0 };
+      g.donors += num(r.donors); g.active += num(r.active); g.revenue += num(r.revenue);
+      byChannel.set(name, g);
+    }
+    const channelRows = [...byChannel.values()].sort((a2, b) => b.donors - a2.donors);
+    const mLab = (v) => fmt.month(v);
+    return [
+      card('tx-recurring', 'Recurring donors', `${fmt.int(num(a.donors))} monthly donors are active, worth about ${fmt.money(num(a.revenue))} a month. ${fmt.int(nm[0])} new monthly donors started in this period, against ${fmt.int(nm[1])} in the same dates last year.`, tiles(
+        tile('Active monthly donors', a.donors, NaN, fmt.int, { note: 'Paid in the last 35 days' }),
+        tile('Monthly run rate', a.revenue, NaN, fmt.money, { note: 'Payments in the last 35 days' }),
+        tile('New monthly donors', nm[0], nm[1], fmt.int, { note: `First monthly payment came in this period · last year ${fmt.int(nm[1])}` }),
+        kept ? tile('Kept since January 1', keptTy, keptLy, fmt.pct, { note: `${fmt.int(num(kept.kept_ty))} of ${fmt.int(num(kept.base_ty))} donors active then still give · last year ${fmt.pct(keptLy)}` }) : null,
+        tile('Average payment', k.avg_payment, l.avg_payment, fmt.money2, { note: `${fmt.int(num(k.payments))} payments in this period · last year ${fmt.money2(num(l.avg_payment))}` }))),
+      card('rec-monthly', 'Active monthly donors by month, last 24 months', 'Top: monthly donors who made a payment that month. Bottom: donors who started (up) and donors whose last payment came that month (down). A donor counts as stopped once 45 days pass with no payment, so the latest weeks will add stops later. The current month is still in progress.', rows.length ? el('div', {},
+        scaledBars(rows, [{ key: 'donors', label: 'Active donors', color: PALETTE[0] }], { xLabel: (r) => mLab(r.month), tip: (r) => `${mLab(r.month)}: ${fmt.int(r.donors)} active`, format: fmt.count }),
+        flow ? divergingBars(rows, 'month', { key: 'started', label: 'Started', color: PALETTE[3] }, { key: 'stopped', label: 'Stopped', color: PALETTE[2] }, fmt.int, { xFormat: mLab }) : null,
+        dataTable([{ label: 'Month', value: (r) => r.month, fmt: mLab }, { label: 'Active', value: (r) => r.donors, fmt: fmt.int }, ...(flow ? [{ label: 'Started', value: (r) => r.started, fmt: fmt.int }, { label: 'Stopped', value: (r) => r.stopped, fmt: fmt.int }] : [])], rows)) : el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' })),
+      cohorts ? card('rec-cohorts', 'Monthly donors by year they started', `How many monthly donors each year's first payments produced and how many still give.${dataStart ? ` Gift records start in ${dataStart}, so the earliest group also holds everyone already giving monthly then.` : ''}`, cohortTable('Started', folded, 'No monthly donors on record.')) : null,
+      channels ? card('rec-channels', 'Monthly donors by sign-up channel', 'The channel of each donor\'s first monthly payment, all years.', cohortTable('Channel', channelRows, 'No monthly donors on record.')) : null,
+    ].filter(Boolean);
+  }
+
   // ---- Tabs --------------------------------------------------------------------
   const TABS = {
     transactions: {
       title: 'All Donations',
       async load(w) {
-        const [[ty, ly], ndTy, ndLy] = await Promise.all([both('all_donations', w), firstGifts('new_donors', w.ty), firstGifts('new_donors', w.ly)]);
-        return { ty, ly, nd: [num(ndTy.new_donors?.[0]?.new_donors), num(ndLy.new_donors?.[0]?.new_donors)] };
+        const [[ty, ly], ndTy, ndLy, rec, ret] = await Promise.all([both('all_donations', w), firstGifts('new_donors', w.ty), firstGifts('new_donors', w.ly), loadRecurring(w), queryWith('RETENTION', w).then((rows) => rows[0] || null).catch(() => null)]);
+        return { ty, ly, nd: [num(ndTy.new_donors?.[0]?.new_donors), num(ndLy.new_donors?.[0]?.new_donors)], rec, ret, w };
       },
-      render({ ty, ly, nd }) {
+      render({ ty, ly, nd, rec, ret, w }) {
         const k = ty.kpis[0] || {}, l = ly.kpis[0] || {};
         return [
           lede(`Donors have given ${fmt.money(num(k.revenue))}${moreLess(change(k.revenue, l.revenue))}. ${fmt.pct(div(k.unattributed_revenue, k.revenue))} of it can't be credited to a channel.`),
@@ -361,6 +476,8 @@
             { label: 'Share', value: (r) => r.__share, fmt: fmt.pct },
             { label: 'Change', value: (r) => r.__change, fmt: fmt.change, cls: changeCls },
           ], withLy(ty.sizes, ly.sizes, 'gift_size', 'revenue').sort((a, b) => num(a.size_order) - num(b.size_order)))),
+          retentionCard(ret, w),
+          ...recurringCards(rec),
           card('tx-codes', 'Top 10 source codes', null, table([
             { label: 'Source code', value: (r) => r.source },
             { label: 'Channel', value: (r) => r.channel },
@@ -865,40 +982,10 @@
         ];
       },
     },
-
-    recurring: {
-      title: 'Recurring Donors',
-      async load(w) {
-        const today = new Date();
-        const { end } = w.ty;
-        const [[ty, ly], active, months, newTy, newLy] = await Promise.all([
-          both('recurring', w),
-          run('recurring', { start: iso(addDays(new Date(end + 'T00:00:00'), -36)), end }),
-          run('recurring', { start: iso(new Date(today.getFullYear(), today.getMonth() - 23, 1)), end }),
-          firstGifts('new_monthly_donors', w.ty),
-          firstGifts('new_monthly_donors', w.ly),
-        ]);
-        return { ty, ly, active, months, nm: [num(newTy.new_donors?.[0]?.new_donors), num(newLy.new_donors?.[0]?.new_donors)] };
-      },
-      render({ ty, ly, active, months, nm }) {
-        const k = ty.kpis[0] || {}, l = ly.kpis[0] || {}, a = active.kpis[0] || {};
-        return [
-          lede(`${fmt.int(num(a.donors))} monthly donors made a payment in the last 36 days, worth about ${fmt.money(num(a.revenue))} a month. ${fmt.int(nm[0])} new monthly donors started in this period.`),
-          tiles(
-            tile('Active monthly donors', a.donors, NaN, fmt.int, { note: 'Paid in the last 36 days' }),
-            tile('Monthly run rate', a.revenue, NaN, fmt.money, { note: 'Payments in the last 36 days' }),
-            tile('New monthly donors', nm[0], nm[1], fmt.int, { note: `First recurring payment on record · last year ${fmt.int(nm[1])}` }),
-            tile('Recurring revenue', k.revenue, l.revenue, fmt.money, { note: `${fmt.int(num(k.payments))} payments · last year ${fmt.money(num(l.revenue))}` }),
-            tile('Average payment', k.avg_payment, l.avg_payment, fmt.money2)),
-          card('rec-monthly', 'Active monthly donors by month, last 24 months', 'Donors who made a recurring payment that month. The current month is still in progress.',
-            bars(months.monthly.slice().sort((a, b) => String(a.month).localeCompare(String(b.month))), 'month', 'donors', fmt.int)),
-        ];
-      },
-    },
   };
 
   // ---- Agency summaries and notes ------------------------------------------------
-  const REPORT_FOR_TAB = { transactions: 'all_donations', email: 'email', sms: 'sms', ads: 'advertising', recurring: 'recurring' };
+  const REPORT_FOR_TAB = { transactions: 'all_donations', email: 'email', sms: 'sms', ads: 'advertising' };
   const REPORT_PATH = (tab) => `${CFG.pluginPath}:reports:${REPORT_FOR_TAB[tab] || tab}`;
   const A = window.FR_AGENCY;
   const T = Object.fromEntries(A.tables.map((t) => [t.name, t]));
