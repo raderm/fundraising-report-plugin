@@ -87,6 +87,7 @@ function toSqlite(text) {
 }
 // What the MariaDB-only report queries return (the real ones run on engine9).
 const CANNED = [
+  [/^SELECT kind, COUNT\(\*\) AS gifts, ROUND\(SUM\(amount\), 2\) AS revenue, COUNT\(DISTINCT transaction_source_code\)/s, [{ kind: 'merge', gifts: 1444, revenue: '12402.90', codes: 2, example: '{{refcode}}' }, { kind: 'variant', gifts: 16002, revenue: '215676.79', codes: 94, example: 'v4' }]],
   [/^SELECT period, ch AS channel, COUNT\(\*\) AS gifts/s, [{ period: 'ty', channel: 'Meta ads', gifts: 9000, revenue: '268000.00' }, { period: 'ty', channel: 'Paid ads (coded)', gifts: 4000, revenue: '110000.00' }, { period: 'ly', channel: 'Meta ads', gifts: 9500, revenue: '250000.00' }]],
   [/^WITH c AS \(SELECT d\.source_code, d\.acquisition_cost AS cost/s, [{ period: 'ty', lists: 11, cost: '178268.00', signups: '601157', new_donors: '7244', raised: '288706.80' }, { period: 'ly', lists: 7, cost: '120974.00', signups: '155867', new_donors: '5678', raised: '320353.05' }]],
   [/^WITH p AS .*SUM\(a0\) AS donors_ty/s, [{ donors_ty: 140465, returning_ty: 62340, new_ty: 31460, donors_ly: 151300, returning_ly: 65800, new_ly: 36900, donors_py: 151400, new_py: 38000, new_ly_again: 8400, new_py_again: 9160, data_start_year: 2015, data_start: '2015-03-02' }]],

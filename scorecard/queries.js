@@ -55,6 +55,12 @@ export const DQ_OFF_CONVENTION = `SELECT ch AS channel, COUNT(DISTINCT transacti
 /** Revenue with no readable channel, and uncoded revenue, by month this year and last. */
 export const DQ_MONTHS = `SELECT DATE_FORMAT(ts, '%m') AS month_no, YEAR(CURDATE()) - YEAR(ts) AS y, ROUND(SUM(amount), 2) AS revenue, ROUND(SUM(CASE WHEN ch IN ('No source code', 'Other source code') THEN amount END), 2) AS unreadable_revenue, ROUND(SUM(CASE WHEN NOT ${CODED} THEN amount END), 2) AS uncoded_revenue FROM (${GIFTS_WITH_CHANNEL}) g WHERE (${THIS_YEAR}) OR (${LAST_YEAR}) GROUP BY 1, 2 ORDER BY 1, 2`;
 
+/**
+ * Gifts this year whose source code is a literal merge tag that never got filled in (for example
+ * {{refcode}} or *|REFCODE|*), and gifts coded with a test variant (v1, v2, ctrl, test) instead of the parent code.
+ */
+export const DQ_CODE_FLAWS = `SELECT kind, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue, COUNT(DISTINCT transaction_source_code) AS codes, MAX(transaction_source_code) AS example FROM (SELECT transaction_source_code, amount, CASE WHEN LOWER(transaction_source_code) REGEXP '\\\\{\\\\{|\\\\}\\\\}|%%|\\\\*\\\\||\\\\|\\\\*|\\\\[\\\\[|\\\\$\\\\{|<%|%7b' THEN 'merge' WHEN LOWER(transaction_source_code) REGEXP '(^|[_-])(v[0-9]+|ctrl|control|test|variant[0-9a-z]*)($|[_-])' THEN 'variant' END AS kind FROM (${GIFT_ROWS} WHERE m.ts >= ${YEAR_START} AND m.ts < ${TOMORROW}) g WHERE COALESCE(transaction_source_code, '') <> '') z WHERE kind IS NOT NULL GROUP BY kind`;
+
 /** ActBlue (or other) pages taking gifts that have no source code. */
 export const DQ_PAGES = `SELECT COALESCE(NULLIF(remote_page_name, ''), '(no page name)') AS page, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue FROM (${GIFT_ROWS}) g WHERE ${THIS_YEAR} AND NOT ${CODED} GROUP BY 1 ORDER BY revenue DESC LIMIT 10`;
 

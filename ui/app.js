@@ -609,6 +609,12 @@
             const avg = div(k.unsubscribes, k.sent);
             return rateWeeks(ty.weekly, (r) => div(r.optouts, r.sent), { reference: avg, referenceLabel: 'Period average', flagOver: isNaN(avg) ? 0 : avg * 2 });
           })()),
+          card('sms-gaps', 'Gaps in the text data', 'What this tab can and can\'t tell you.', el('ul', { class: 'ef-gaps' },
+            [['No delivery counts. ', 'Texting platforms don\'t report delivered texts to engine9, so click and opt-out rates use texts sent.'],
+              ['Message text isn\'t stored. ', 'Messages are named by their source code. Type and purpose are read from that code\'s naming pattern, so a message coded outside the pattern shows as Other.'],
+              ['Revenue is last-click. ', 'A gift counts for the text only if the text was the last thing the donor clicked.'],
+              [num(k.cost) > 0 ? 'Cost is the platform\'s sending charge. ' : 'No sending cost is on record. ', num(k.cost) > 0 ? 'It is the charge as reported to engine9. Staff time, list fees and short-code fees aren\'t included.' : 'Texting platforms haven\'t reported a charge to engine9 for this period, so raised per $1 and net can\'t be judged.']]
+              .map(([b, t]) => el('li', {}, el('b', { text: b }), t)))),
         ];
       },
     },
@@ -933,9 +939,10 @@
       title: 'Data Quality',
       async load() {
         const [summary, off, months, pages, acq] = await Promise.all(['DQ_SUMMARY', 'DQ_OFF_CONVENTION', 'DQ_MONTHS', 'DQ_PAGES', 'DQ_ACQUISITION_COST'].map(query));
-        return { summary, off, months, pages, acq: acq[0] || {} };
+        const flaws = await query('DQ_CODE_FLAWS').catch(() => []);
+        return { summary, off, months, pages, acq: acq[0] || {}, flaws };
       },
-      render({ summary, off, months, pages, acq }) {
+      render({ summary, off, months, pages, acq, flaws }) {
         const t = summary.find((r) => r.period === 'This year') || {}, l = summary.find((r) => r.period === 'Last year') || {};
         const share = (r, k) => div(r[k + '_revenue'], r.revenue);
         const mk = (label, k, opts = {}) => tile(label, share(t, k), share(l, k), fmt.pct, { lowerIsBetter: true, ...opts, note: `${fmt.money(num(t[k + '_revenue']))} · ${fmt.int(num(t[k + '_gifts']))} gifts · last year ${fmt.pct(share(l, k))}` });
@@ -950,6 +957,7 @@
         const sev = (rev, cap) => { const v = rawSev(rev); return cap && ORDER_N[v] < ORDER_N[cap] ? cap : v; };
         const ORDER_N = { High: 0, Medium: 1, Low: 2 };
         const rawSev = (rev) => (rev >= 1e5 || rev / num(t.revenue) >= 0.05 ? 'High' : rev >= 1e4 || rev / num(t.revenue) >= 0.01 ? 'Medium' : 'Low');
+        const flawOf = (kind) => flaws.find((r) => r.kind === kind);
         const topPage = pages[0]?.page;
         const rtlNoCost = num(acq.rtl_codes) - num(acq.rtl_codes_with_cost);
         const issues = [
@@ -957,6 +965,8 @@
           { issue: 'Codes outside the naming convention', rev: num(t.offconv_revenue), see: `${fmt.money(num(t.offconv_revenue))} and ${fmt.int(num(t.offconv_gifts))} gifts, ${fmt.pct(share(t, 'offconv'))} of revenue`, affects: 'Channel is guessed from words in the code', fix: 'Move onto the LOC_ / MS_ convention or map the code in the dictionary', owner: 'Data team', cap: 'Medium' },
           { issue: 'Code channel field empty', rev: num(t.nochannel_revenue), see: `${fmt.pct(div(t.nochannel_gifts, num(t.gifts) - num(t.uncoded_gifts)))} of coded gifts (${fmt.money(num(t.nochannel_revenue))})`, affects: 'Channel depends on code naming', fix: 'Fill the channel on the source codes that lack it', owner: 'Data team', cap: 'Medium' },
           { issue: 'Campaign field empty', rev: num(t.nocampaign_revenue), see: `${fmt.pct(div(t.nocampaign_gifts, num(t.gifts) - num(t.uncoded_gifts)))} of coded gifts (${fmt.money(num(t.nocampaign_revenue))})`, affects: 'Roll-ups by campaign', fix: 'Set the campaign field when codes are created', owner: 'Data team', cap: 'Low' },
+          flawOf('merge') ? { issue: 'Source code shipped as an unfilled merge tag', rev: num(flawOf('merge').revenue), see: `${fmt.int(num(flawOf('merge').gifts))} gifts whose code is a literal merge tag such as ${flawOf('merge').example} (${fmt.money(num(flawOf('merge').revenue))})`, affects: 'Email and ad revenue that cannot be traced to a send', fix: 'Add a merge-field check to pre-send QA', owner: 'Email team' } : null,
+          flawOf('variant') ? { issue: 'Variant codes used as live codes', rev: num(flawOf('variant').revenue), see: `${fmt.int(num(flawOf('variant').codes))} codes such as ${flawOf('variant').example}: ${fmt.int(num(flawOf('variant').gifts))} gifts, ${fmt.money(num(flawOf('variant').revenue))}`, affects: 'Email results by send', fix: 'Suffix the parent code instead of using v1, v2, ctrl or test on its own', owner: 'Email team', cap: 'Medium' } : null,
           rtlNoCost > 0 ? { issue: 'Rented-list codes carry no cost', rev: Infinity, see: `${fmt.int(rtlNoCost)} of ${fmt.int(num(acq.rtl_codes))} rented-list codes have no cost on file`, affects: 'Raised per $1, acquisition payback', fix: 'Enter the rental cost when RTL codes are created', owner: 'List manager' } : null,
         ].filter(Boolean).map((r) => ({ ...r, severity: r.rev === Infinity ? 'High' : sev(r.rev, r.cap) }));
         const ORDER = { High: 0, Medium: 1, Low: 2 };

@@ -189,3 +189,6 @@ body[data-auth="out"] .fr-period, body[data-auth="checking"] .fr-period { displa
 .ef-ret-row { margin-top: var(--cds-gap-sm); }
 .ef-ret-strip { display: flex; height: 26px; margin-top: 4px; }
 .ef-ret-strip span { display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; font-size: var(--cds-font-size-caption); font-weight: 700; }
+
+.ef-gaps { margin: 0; padding-left: 1.2em; max-width: 82ch; line-height: 1.5; }
+.ef-gaps li + li { margin-top: var(--cds-gap-sm); }
