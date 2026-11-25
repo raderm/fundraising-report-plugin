@@ -33,7 +33,6 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); fon
 .fr-gate h1 { font-family: var(--font-anthropic-serif); font-weight: 500; margin: 0 0 8px; }
 .fr-gate p { line-height: 1.5; margin: 8px 0; }
 .fr-gate .fr-msg { color: var(--color-bad); }
-body[data-auth="out"] .ef-root, body[data-auth="checking"] .ef-root { display: none; }
 body[data-auth="in"] .fr-gate, body[data-auth="checking"] .fr-gate { display: none; }
 .fr-account { display: inline-flex; align-items: center; }
 .ef-tab[disabled] { opacity: 0.45; cursor: not-allowed; }
