@@ -118,6 +118,22 @@ const ACQ_COST = (ty, ly) => `SELECT CASE WHEN date >= '${ymd(ty.start)}' AND da
 /** Email sign-ups in the period by the type part of their source code (LOC_EM_… reads as EM), with how many are still subscribed. */
 const ACQ_SIGNUPS = (ty, ly) => `SELECT CASE WHEN date_created >= '${ymd(ty.start)}' AND date_created < '${ymd(ty.end)}' THEN 'ty' ELSE 'ly' END AS period, CASE WHEN COALESCE(source_code, '') = '' THEN '(no source code)' WHEN source_code REGEXP '^[A-Za-z0-9]{2,8}_[^_]+' THEN UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(source_code, '_', 2), '_', -1)) ELSE '(other format)' END AS source, COUNT(*) AS signups, SUM(subscription_status = 'Subscribed') AS still_subscribed FROM acoustic_jsv_person WHERE (date_created >= '${ymd(ty.start)}' AND date_created < '${ymd(ty.end)}') OR (date_created >= '${ymd(ly.start)}' AND date_created < '${ymd(ly.end)}') GROUP BY 1, 2`;
 
+/**
+ * Bought lists (co-registration): imported email lists whose source code has a purchase price
+ * (acquisition_cost) in the source-code dictionary. Each list counts in the period holding the
+ * import date written in its code (LOC_IMPORT_EM_LP_YYYYMMDD_...). Per period: lists, cost, people
+ * added to the email platform with those codes, how many of them first gave after joining, and
+ * what those new donors have given since.
+ */
+const ACQ_BOUGHT_LISTS = (ty, ly) => `WITH c AS (SELECT d.source_code, d.acquisition_cost AS cost, STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(d.source_code, '_', 5), '_', -1), '%Y%m%d') AS dt FROM source_code_dictionary d WHERE UPPER(COALESCE(d.source_code_channel, '')) = 'IMPORT' AND d.acquisition_cost > 0 AND d.acquisition_cost < 1000000), codes AS (SELECT source_code, cost, CASE WHEN dt >= '${ymd(ty.start)}' AND dt < '${ymd(ty.end)}' THEN 'ty' WHEN dt >= '${ymd(ly.start)}' AND dt < '${ymd(ly.end)}' THEN 'ly' END AS period FROM c), pp AS (SELECT a.source_code, a.date_created, r.person_id FROM acoustic_jsv_person a JOIN codes ON codes.source_code = a.source_code AND codes.period IS NOT NULL LEFT JOIN person_remote r ON r.remote_person_id = a.remote_person_id), f AS (SELECT t.person_id, MIN(t.ts) AS fts, SUM(t.amount) AS total FROM \`transaction\` t JOIN (SELECT DISTINCT person_id FROM pp WHERE person_id IS NOT NULL) q ON q.person_id = t.person_id GROUP BY t.person_id), s AS (SELECT pp.source_code, COUNT(*) AS signups, SUM(f.fts >= pp.date_created) AS new_donors, SUM(CASE WHEN f.fts >= pp.date_created THEN f.total END) AS raised FROM pp LEFT JOIN f ON f.person_id = pp.person_id GROUP BY pp.source_code) SELECT codes.period, COUNT(*) AS lists, ROUND(SUM(codes.cost), 2) AS cost, SUM(COALESCE(s.signups, 0)) AS signups, SUM(COALESCE(s.new_donors, 0)) AS new_donors, ROUND(SUM(COALESCE(s.raised, 0)), 2) AS raised FROM codes LEFT JOIN s ON s.source_code = codes.source_code WHERE codes.period IS NOT NULL GROUP BY codes.period`;
+
+/**
+ * Gifts read as coming from ads (a linked Meta or Google ad message, or an ad source code) in the
+ * period and the same dates last year. The generous end of the Ads tab's raised-per-$1 range;
+ * the strict end counts only gifts whose last click was on an ad.
+ */
+const ADS_CODED_GIFTS = (ty, ly) => `SELECT period, ch AS channel, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue FROM (SELECT x.*, CASE WHEN ts >= '${ymd(ty.start)}' AND ts < '${ymd(ty.end)}' THEN 'ty' ELSE 'ly' END AS period, ${CHANNEL_CASE} AS ch FROM (${GIFT_ROWS} WHERE (m.ts >= '${ymd(ty.start)}' AND m.ts < '${ymd(ty.end)}') OR (m.ts >= '${ymd(ly.start)}' AND m.ts < '${ymd(ly.end)}')) x) z WHERE ch IN ('Meta ads', 'Google ads', 'Paid ads (coded)') GROUP BY 1, 2`;
+
 // ---- Donor retention (a section of All Donations) ---------------------------------
 // One row per person: the first gift on record and whether they gave in the period (a0),
 // in the same dates a year earlier (a1) and in the same dates two years earlier (a2).
@@ -160,5 +176,5 @@ const REC_KEPT = (ty, ly) => {
   return `SELECT SUM(a_ty) AS base_ty, SUM(a_ty AND k_ty) AS kept_ty, SUM(a_ly) AS base_ly, SUM(a_ly AND k_ly) AS kept_ly FROM (SELECT person_id, ${one('ty', ty)}, ${one('ly', ly)} FROM ${REC} AND ts >= '${jan(ly)}' - INTERVAL 35 DAY GROUP BY person_id) z`;
 };
 
-window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS, RETENTION, REC, REC_PEOPLE, REC_FLOW, REC_COHORTS, REC_CHANNELS, REC_KEPT };
+window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS, ACQ_BOUGHT_LISTS, ADS_CODED_GIFTS, RETENTION, REC, REC_PEOPLE, REC_FLOW, REC_COHORTS, REC_CHANNELS, REC_KEPT };
 })();

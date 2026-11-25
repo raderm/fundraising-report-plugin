@@ -87,6 +87,8 @@ function toSqlite(text) {
 }
 // What the MariaDB-only report queries return (the real ones run on engine9).
 const CANNED = [
+  [/^SELECT period, ch AS channel, COUNT\(\*\) AS gifts/s, [{ period: 'ty', channel: 'Meta ads', gifts: 9000, revenue: '268000.00' }, { period: 'ty', channel: 'Paid ads (coded)', gifts: 4000, revenue: '110000.00' }, { period: 'ly', channel: 'Meta ads', gifts: 9500, revenue: '250000.00' }]],
+  [/^WITH c AS \(SELECT d\.source_code, d\.acquisition_cost AS cost/s, [{ period: 'ty', lists: 11, cost: '178268.00', signups: '601157', new_donors: '7244', raised: '288706.80' }, { period: 'ly', lists: 7, cost: '120974.00', signups: '155867', new_donors: '5678', raised: '320353.05' }]],
   [/^WITH p AS .*SUM\(a0\) AS donors_ty/s, [{ donors_ty: 140465, returning_ty: 62340, new_ty: 31460, donors_ly: 151300, returning_ly: 65800, new_ly: 36900, donors_py: 151400, new_py: 38000, new_ly_again: 8400, new_py_again: 9160, data_start_year: 2015, data_start: '2015-03-02' }]],
   [/^WITH p AS .*SELECT month, SUM\(kind/s, [{ month: '2026-10-01', started: '713', stopped: '272' }, { month: '2026-11-01', started: '425', stopped: '0' }]],
   [/^WITH p AS .*YEAR\(p\.f\) AS year/s, [{ year: 2019, donors: 41960, active: 4331, revenue: '655318.55', data_start: 2015 }, { year: 2025, donors: 949, active: 227, revenue: '54995.37', data_start: 2015 }, { year: 2026, donors: 6859, active: 4599, revenue: '427047.96', data_start: 2015 }]],
@@ -195,6 +197,8 @@ out.summary = await page.textContent('#transactions-summary .ef-sum-head');
 for (const tab of ['scorecard', 'email', 'sms', 'ads', 'acquisition', 'dq']) {
   await page.click(`.ef-tab[data-tab="${tab}"]`);
   await page.waitForFunction((t) => document.querySelector('#tab h1')?.textContent && !document.querySelector('#loading') && location.hash === '#' + t, tab);
+  if (tab === 'ads') await page.waitForFunction(() => /\$\d.*–\$\d/.test(document.querySelector('#ads-range')?.textContent || ''), null, { timeout: 8000 });
+  if (tab === 'acquisition') await page.waitForFunction(() => /Bought lists/.test(document.querySelector('#acq-paid')?.textContent || ''), null, { timeout: 8000 });
   out[tab] = (await page.textContent('#tab .ef-lede')) || (await page.textContent('#tab'));
   await page.screenshot({ path: `/tmp/ui-${tab}.png`, fullPage: true });
 }

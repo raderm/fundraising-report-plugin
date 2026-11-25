@@ -642,7 +642,22 @@
                 tile('New donors from ads', nTy, nLy, fmt.int, { note: `First gift credited to an ad · last year ${fmt.int(nLy)}` }),
                 tile('Cost per new donor', div(k.spend, nTy), div(l.spend, nLy), fmt.money2, { lowerIsBetter: true, note: 'Upper bound: all spend ÷ new donors' }),
                 signups ? tile('Email sign-ups from ads', adSignups('ty'), adSignups('ly'), fmt.int, { note: `Ad-coded email platform records · ${fmt.money2(div(k.spend, adSignups('ty')))} spend per sign-up` }) : null,
-                tile('Raised per $1 spent', rpd(k), rpd(l), fmt.money2, { note: 'Strict: gifts whose last click was an ad. Gifts coded as ads but not linked to one are not counted.' })));
+                el('div', { class: 'ef-card', id: 'ads-range' }, el('div', { class: 'ef-tile-label', text: 'Raised per $1, as a range' }),
+                  el('div', { class: 'ef-tile-value', text: '…' }), el('div', { class: 'ef-tile-note', text: `Strict: last-click gifts ${fmt.money2(rpd(k))}. Working out the generous end.` }))),
+              el('p', { class: 'ef-note' }, el('b', { text: 'Why a range. ' }), 'The low end counts only gifts whose last click was on an ad. The high end adds gifts whose source code marks them as ads, as the Scorecard does. Later gifts from donors the ads brought in are in neither figure; the Acquisition tab adds those.'));
+              queryWith('ADS_CODED_GIFTS', w).then((g) => {
+                const coded = (p) => g.filter((r) => r.period === p).reduce((t, r) => t + (num(r.revenue) || 0), 0);
+                const hi = (rev, coded2, spend) => div(Math.max(num(rev) || 0, coded2), spend);
+                const lyHi = hi(l.revenue, coded('ly'), l.spend), tyHi = hi(k.revenue, coded('ty'), k.spend);
+                const slot = box.querySelector('#ads-range');
+                if (!slot) return;
+                slot.replaceChildren(el('div', { class: 'ef-tile-label', text: 'Raised per $1, as a range' }),
+                  el('div', { class: 'ef-tile-value', text: `${fmt.money2(rpd(k))}–${fmt.money2(tyHi)}` }),
+                  el('div', { class: 'ef-tile-note', text: `Strict: last-click gifts · generous: all ad-coded gifts · last year ${fmt.money2(rpd(l))}–${fmt.money2(lyHi)}` }));
+              }).catch(() => {
+                const slot = box.querySelector('#ads-range');
+                if (slot) slot.replaceChildren(el('div', { class: 'ef-tile-label', text: 'Raised per $1, as a range' }), el('div', { class: 'ef-tile-value', text: fmt.money2(rpd(k)) }), el('div', { class: 'ef-tile-note', text: 'Strict: gifts whose last click was an ad. The generous end could not be worked out just now.' }));
+              });
             }).catch(() => box.replaceChildren(el('p', { class: 'ef-empty', text: 'New donors from ads could not be counted right now.' })));
             return box;
           })()),
@@ -774,9 +789,11 @@
         const optional = (p) => p.catch(() => null);
         const [period, monthly, codes, cost, signups] = await Promise.all([
           queryWith('ACQ_PERIOD', w), query('ACQ_MONTHLY'), optional(queryWith('ACQ_CODES', w)), optional(queryWith('ACQ_COST', w)), optional(queryWith('ACQ_SIGNUPS', w))]);
-        return { period, monthly, codes: codes || [], cost: cost || [], signups, w };
+        // Bought lists are slow, so the tab does not wait for them.
+        const bought = queryWith('ACQ_BOUGHT_LISTS', w).catch(() => null);
+        return { period, monthly, codes: codes || [], cost: cost || [], signups, bought, w };
       },
-      render({ period, monthly, codes, cost, signups, w }) {
+      render({ period, monthly, codes, cost, signups, bought, w }) {
         const ORIGINS = [
           { key: 'Email', label: 'Email', members: ['Email'], color: PALETTE[0] },
           { key: 'Texts', label: 'Texts', members: ['Text (SMS)'], color: PALETTE[1] },
@@ -828,6 +845,38 @@
           for (const r of signups) { const g = by.get(r.source) || { source: r.source, ty: 0, ly: 0, subscribed: 0 }; if (r.period === 'ty') { g.ty += num(r.signups) || 0; g.subscribed += num(r.still_subscribed) || 0; } else g.ly += num(r.signups) || 0; by.set(r.source, g); }
           return [...by.values()].filter((g) => g.ty || g.ly).sort((a, b) => b.ty - a.ty).slice(0, 12);
         })();
+        // Paid acquisition card: ads plus bought lists. Bought lists take about a minute to work out, so they fill in when ready.
+        const adSignups = sum(signups ? signups.filter((r) => r.period === 'ty' && r.source === 'AD') : [], 'signups');
+        const allSignups = sum(signups ? signups.filter((r) => r.period === 'ty') : [], 'signups');
+        const paidCard = (bought) => {
+          const bl = bought ? bought.find((r) => r.period === 'ty') : null;
+          const lists = bl ? { name: 'Bought lists (co-registration)', cost: num(bl.cost), signups: num(bl.signups), donors: num(bl.new_donors), raised: num(bl.raised), how: `${fmt.int(num(bl.lists))} imported lists with a purchase price on the source code; new donors are list names who first gave after joining` } : null;
+          const rows = [...(lists ? [lists] : []), ...paidSources.map((r) => ({ ...r, signups: NaN }))];
+          const costAll = adCost + (lists ? lists.cost : 0), donorsAll = adDonors + (lists ? lists.donors : 0), raisedAll = adRaised + (lists ? lists.raised : 0);
+          const paidSignups = adSignups + (lists ? lists.signups : 0);
+          return card('acq-paid', 'Paid acquisition: what it cost and what it has returned', 'Every paid way of finding new supporters in this period. Raised per $1 counts only gifts from people who were new donors, from their first gift up to today, so it keeps growing as they give again.', tiles(
+            tile('Paid acquisition cost', costAll, NaN, fmt.money, { note: `${lists ? `${fmt.money(lists.cost)} bought lists · ` : ''}${fmt.money(adCost)} ads` }),
+            tile('New donors from paid sources', donorsAll, NaN, fmt.int, { note: donorsAll ? `${fmt.money2(div(costAll, donorsAll))} per new donor` : 'None in this period' }),
+            tile('Raised per $1 so far', div(raisedAll, costAll), NaN, fmt.money2, { note: `New donors only · ads ${fmt.money2(div(adRaised, adCost))}${lists ? `, bought lists ${fmt.money2(div(lists.raised, lists.cost))}` : ''}` }),
+            signups ? tile('Email sign-ups, all sources', allSignups, NaN, fmt.int, { note: `${fmt.int(paidSignups)} from paid sources` }) : null),
+            table([
+              { label: 'Source', value: (r) => r.name },
+              { label: 'Cost', value: (r) => (costed(r) ? r.cost : 'Not recorded'), fmt: (v) => (typeof v === 'number' ? fmt.money(v) : v) },
+              { label: 'Email sign-ups', value: (r) => r.signups, fmt: fmt.int },
+              { label: 'Cost per sign-up', value: (r) => (costed(r) ? div(r.cost, r.signups) : NaN), fmt: fmt.money2 },
+              { label: 'New donors', value: (r) => r.donors, fmt: fmt.int },
+              { label: 'Cost per new donor', value: (r) => (costed(r) ? div(r.cost, r.donors) : NaN), fmt: fmt.money2 },
+              { label: 'Raised by those donors', value: (r) => r.raised, fmt: fmt.money },
+              { label: 'Per $1', value: (r) => (costed(r) ? div(r.raised, r.cost) : NaN), fmt: fmt.money2 },
+              { label: 'How it\'s counted', value: (r) => r.how },
+            ], rows.filter((r) => r.donors || costed(r)), undefined, 'ef-table-text'),
+            bought === undefined ? el('p', { class: 'ef-note', text: 'Working out bought lists. This takes about a minute and fills in here.' }) : null,
+            bought === null ? el('p', { class: 'ef-note', text: 'Bought lists could not be worked out just now, so only ads and rented lists are shown.' }) : null,
+            adSignups > 0 ? el('p', { class: 'ef-note', text: `Ad sign-ups (${fmt.int(adSignups)}) can't be split between Meta and Google, so they appear only in the totals above.` }) : null,
+            paidSources[2].donors ? el('p', { class: 'ef-note' }, el('b', { text: 'Rented lists can\'t show payback yet. ' }), `They brought in ${fmt.int(paidSources[2].donors)} new donors who have given ${fmt.money(paidSources[2].raised)}, but no rental cost is entered on the RTL source codes. The Data Quality tab lists this.`) : null);
+        };
+        const paidSlot = el('div', {}, paidCard(undefined));
+        if (bought) bought.then((rows) => paidSlot.replaceChildren(paidCard(rows)));
         const SIGN = { IMPORT: 'Imported lists', RTL: 'Rented lists', AD: 'Paid ads', EM: 'Email', BC: 'Text broadcast', P2P: 'Text peer-to-peer' };
         return [
           lede(`${fmt.int(nTy)} people have given for the first time in this period, against ${fmt.int(nLy)} in the same dates last year. Together they have given ${fmt.money(sum(ty, 'first_amt') + laterTy)}.${top ? ` ${top.origin} brought in the most new donors (${fmt.int(top.donors)}).` : ''}`),
@@ -836,20 +885,7 @@
             el('p', { text: 'Channel is read from the linked message, else from the source code, by the rules on the All Donations tab. First gifts with no readable code are grey in the chart.' }),
             el('p', { text: 'Ad cost per new donor is an upper bound: it divides all ad spend by donors whose first gift was credited to an ad.' }),
             el('p', { text: 'Recent donors have had less time to give again, so compare quarters with that in mind. New donors are counted from January 1 of last year, so at least a year of history stands behind each.' })),
-          card('acq-paid', 'Paid acquisition: what it cost and what it has returned', 'Ad spend on record against new donors whose first gift came from that source. Raised per $1 counts everything those donors have given so far, so it keeps growing.', tiles(
-            tile('Ad spend', adCost, NaN, fmt.money, { note: 'Meta and Google, recorded on messages' }),
-            tile('New donors from ads', adDonors, NaN, fmt.int, { note: adDonors ? `${fmt.money2(div(adCost, adDonors))} per new donor (upper bound)` : 'None in this period' }),
-            tile('Raised per $1 so far', div(adRaised, adCost), NaN, fmt.money2, { note: 'New donors from ads only' })),
-            table([
-              { label: 'Source', value: (r) => r.name },
-              { label: 'Cost', value: (r) => (costed(r) ? r.cost : 'Not recorded'), fmt: (v) => (typeof v === 'number' ? fmt.money(v) : v) },
-              { label: 'New donors', value: (r) => r.donors, fmt: fmt.int },
-              { label: 'Cost per new donor', value: (r) => (costed(r) ? div(r.cost, r.donors) : NaN), fmt: fmt.money2 },
-              { label: 'Raised by those donors', value: (r) => r.raised, fmt: fmt.money },
-              { label: 'Per $1', value: (r) => (costed(r) ? div(r.raised, r.cost) : NaN), fmt: fmt.money2 },
-              { label: 'How it\'s counted', value: (r) => r.how },
-            ], paidSources.filter((r) => r.donors || costed(r))),
-            paidSources[2].donors ? el('p', { class: 'ef-note' }, el('b', { text: 'Rented lists can\'t show payback yet. ' }), `They brought in ${fmt.int(paidSources[2].donors)} new donors who have given ${fmt.money(paidSources[2].raised)}, but no rental cost is entered on the RTL source codes. The Data Quality tab lists this.`) : null),
+          paidSlot,
           card('acq-signups', 'Email sign-ups by source', 'People added to the email list in this period, grouped by the type part of the source code on their email platform record.', signups === null || !sources.length
             ? el('p', { class: 'ef-empty', text: 'No email platform records are available for this account.' })
             : table([
