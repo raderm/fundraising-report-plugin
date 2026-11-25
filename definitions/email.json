@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "name": "Email",
+  "description": "Email sends, revenue credited to email, list health, and the best emails, sizes and purposes.",
+  "tags": [
+    "Fundraising",
+    "Email"
+  ],
+  "data_sources": {
+    "default": {
+      "table": "global_message_summary",
+      "date_column": "publish_date",
+      "conditions": [
+        {
+          "eql": "channel='email' and publish_date is not null"
+        }
+      ]
+    }
+  },
+  "sections": [
+    {
+      "title": "Totals",
+      "components": [
+        {
+          "id": "kpis",
+          "component": "Table",
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "unsubscribes",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            },
+            {
+              "name": "revenue_day1",
+              "eql": "sum(attributed_revenue_day_1)",
+              "format": "currency"
+            },
+            {
+              "name": "recurring_revenue",
+              "eql": "sum(attributed_recurring_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "new_monthly",
+              "eql": "sum(attributed_initial_recurring_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "zero_revenue_messages",
+              "eql": "count(distinct case when attributed_revenue=0 then message_id end)",
+              "format": "number"
+            },
+            {
+              "name": "delivered",
+              "eql": "sum(delivered)",
+              "format": "number"
+            },
+            {
+              "name": "complaints",
+              "eql": "sum(complaints)",
+              "format": "number"
+            },
+            {
+              "name": "hard_bounces",
+              "eql": "sum(hard_bounces)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Over time",
+      "components": [
+        {
+          "id": "monthly",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "month",
+              "eql": "month(publish_date)"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "id": "weekly",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "week",
+              "eql": "week(publish_date)"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "complaints",
+              "eql": "sum(complaints)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "What worked",
+      "components": [
+        {
+          "id": "purpose",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "purpose",
+              "eql": "case when upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),'')))='' then 'No source code'\n  when left(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),6)='FKAUTO' then 'Automated'\n  when left(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),7)<>'LOC_EM_' and left(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),6)<>'MS_EM_' then 'Other coded'\n  when substring_index(substring_index(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),'_',3),'_',-1)='FR' then 'Fundraising ask'\n  when substring_index(substring_index(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),'_',3),'_',-1)='PET' then 'Petition'\n  when substring_index(substring_index(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),'_',3),'_',-1) in ('POLL','SURV') then 'Poll or survey'\n  when substring_index(substring_index(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),'_',3),'_',-1)='CARD' then 'Card or thank-you'\n  when substring_index(substring_index(upper(ifnull(nullif(final_primary_source_code,''),ifnull(nullif(primary_source_code,''),''))),'_',3),'_',-1) in ('INVITE','INFO','NOFR','EVENT') then 'Event or information'\n  else 'Other coded' end"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "delivered",
+              "eql": "sum(delivered)",
+              "format": "number"
+            },
+            {
+              "name": "unsubscribes",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            },
+            {
+              "name": "new_monthly",
+              "eql": "sum(attributed_initial_recurring_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "zero_revenue_messages",
+              "eql": "count(distinct case when attributed_revenue=0 then message_id end)",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "id": "top_emails",
+          "component": "Table",
+          "query": {
+            "table": "global_message_summary",
+            "columns": [
+              {
+                "eql": "min(publish_date)",
+                "name": "send_date"
+              },
+              {
+                "eql": "ifnull(nullif(max(subject),''),'(no subject)')",
+                "name": "subject"
+              },
+              {
+                "eql": "sum(sent)",
+                "name": "sent"
+              },
+              {
+                "eql": "sum(delivered)",
+                "name": "delivered"
+              },
+              {
+                "eql": "sum(attributed_revenue)",
+                "name": "revenue"
+              },
+              {
+                "eql": "sum(attributed_transactions)",
+                "name": "gifts"
+              },
+              {
+                "eql": "sum(clicks)",
+                "name": "clicks"
+              },
+              {
+                "eql": "sum(unsubscribes)",
+                "name": "unsubscribes"
+              },
+              {
+                "eql": "sum(attributed_initial_recurring_transactions)",
+                "name": "new_monthly"
+              }
+            ],
+            "conditions": [
+              {
+                "eql": "channel='email' and publish_date is not null"
+              }
+            ],
+            "groupBy": [
+              {
+                "eql": "message_id"
+              }
+            ],
+            "orderBy": [
+              {
+                "eql": "sum(attributed_revenue)",
+                "orderByDirection": "desc"
+              }
+            ],
+            "limit": 10
+          }
+        },
+        {
+          "id": "by_size",
+          "component": "Table",
+          "query": {
+            "table": "msg",
+            "subquery": {
+              "table": "global_message_summary",
+              "columns": [
+                {
+                  "eql": "message_id",
+                  "name": "message_id"
+                },
+                {
+                  "eql": "max(channel)",
+                  "name": "channel"
+                },
+                {
+                  "eql": "max(publish_date)",
+                  "name": "publish_date"
+                },
+                {
+                  "eql": "sum(sent)",
+                  "name": "sent"
+                },
+                {
+                  "eql": "sum(attributed_revenue)",
+                  "name": "revenue"
+                }
+              ],
+              "conditions": [
+                {
+                  "eql": "channel='email' and publish_date is not null"
+                }
+              ],
+              "groupBy": [
+                {
+                  "eql": "message_id"
+                }
+              ]
+            },
+            "columns": [
+              {
+                "eql": "case when sent < 50000 then 1 when sent < 250000 then 2 else 3 end",
+                "name": "size_order"
+              },
+              {
+                "eql": "count(*)",
+                "name": "messages"
+              },
+              {
+                "eql": "sum(sent)",
+                "name": "sent"
+              },
+              {
+                "eql": "sum(revenue)",
+                "name": "revenue"
+              },
+              {
+                "eql": "sum(case when revenue=0 then 1 else 0 end)",
+                "name": "zero_revenue_messages"
+              }
+            ],
+            "groupBy": [
+              {
+                "eql": "case when sent < 50000 then 1 when sent < 250000 then 2 else 3 end"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

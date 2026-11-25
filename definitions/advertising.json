@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "name": "Advertising",
+  "description": "Ad spend, reach, clicks and the gifts credited to ads, by month, platform and campaign.",
+  "tags": [
+    "Fundraising",
+    "Ads"
+  ],
+  "data_sources": {
+    "default": {
+      "table": "global_message_summary_by_date",
+      "date_column": "date",
+      "conditions": [
+        {
+          "eql": "right(channel,3)='_ad'"
+        }
+      ]
+    }
+  },
+  "sections": [
+    {
+      "title": "Totals",
+      "components": [
+        {
+          "id": "kpis",
+          "component": "Table",
+          "metrics": [
+            {
+              "name": "spend",
+              "eql": "sum(ifnull(spend_override,spend))",
+              "format": "currency"
+            },
+            {
+              "name": "impressions",
+              "eql": "sum(impressions)",
+              "format": "number"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "new_people",
+              "eql": "sum(origin_person_count)",
+              "format": "number"
+            },
+            {
+              "name": "new_monthly",
+              "eql": "sum(attributed_initial_recurring_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "campaigns",
+              "eql": "count(distinct nullif(campaign_name,''))",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "By month and platform",
+      "components": [
+        {
+          "id": "monthly",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "month",
+              "eql": "month(date)"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "spend",
+              "eql": "sum(ifnull(spend_override,spend))",
+              "format": "currency"
+            },
+            {
+              "name": "impressions",
+              "eql": "sum(impressions)",
+              "format": "number"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "id": "platforms",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "platform",
+              "eql": "case when channel='facebook_ad' then 'Meta (Facebook and Instagram)' when channel='google_ad' then 'Google Ads' else replace(channel,'_ad','') end"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "spend",
+              "eql": "sum(ifnull(spend_override,spend))",
+              "format": "currency"
+            },
+            {
+              "name": "impressions",
+              "eql": "sum(impressions)",
+              "format": "number"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Top campaigns",
+      "components": [
+        {
+          "id": "campaigns",
+          "component": "Table",
+          "query": {
+            "table": "global_message_summary_by_date",
+            "columns": [
+              {
+                "eql": "case when channel='facebook_ad' then 'Meta (Facebook and Instagram)' when channel='google_ad' then 'Google Ads' else replace(channel,'_ad','') end",
+                "name": "platform"
+              },
+              {
+                "eql": "ifnull(nullif(campaign_name,''),'(no campaign name)')",
+                "name": "campaign"
+              },
+              {
+                "eql": "count(distinct message_id)",
+                "name": "ads"
+              },
+              {
+                "eql": "sum(ifnull(spend_override,spend))",
+                "name": "spend"
+              },
+              {
+                "eql": "sum(impressions)",
+                "name": "impressions"
+              },
+              {
+                "eql": "sum(clicks)",
+                "name": "clicks"
+              },
+              {
+                "eql": "sum(attributed_revenue)",
+                "name": "revenue"
+              },
+              {
+                "eql": "sum(attributed_transactions)",
+                "name": "gifts"
+              },
+              {
+                "eql": "min(date)",
+                "name": "first_day"
+              },
+              {
+                "eql": "max(date)",
+                "name": "last_day"
+              }
+            ],
+            "conditions": [
+              {
+                "eql": "right(channel,3)='_ad'"
+              }
+            ],
+            "groupBy": [
+              {
+                "eql": "case when channel='facebook_ad' then 'Meta (Facebook and Instagram)' when channel='google_ad' then 'Google Ads' else replace(channel,'_ad','') end"
+              },
+              {
+                "eql": "ifnull(nullif(campaign_name,''),'(no campaign name)')"
+              }
+            ],
+            "orderBy": [
+              {
+                "eql": "sum(ifnull(spend_override,spend))",
+                "orderByDirection": "desc"
+              }
+            ],
+            "limit": 15
+          }
+        }
+      ]
+    }
+  ]
+}

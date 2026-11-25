@@ -1,0 +1,413 @@
+{
+  "schema_version": 1,
+  "name": "Texts",
+  "description": "Texts sent, revenue credited to texts, sending cost, opt-outs, platforms, message types and the best texts.",
+  "tags": [
+    "Fundraising",
+    "SMS"
+  ],
+  "data_sources": {
+    "default": {
+      "table": "global_message_summary",
+      "date_column": "publish_date",
+      "conditions": [
+        {
+          "eql": "channel='sms' and publish_date is not null"
+        }
+      ]
+    }
+  },
+  "sections": [
+    {
+      "title": "Totals",
+      "components": [
+        {
+          "id": "kpis",
+          "component": "Table",
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "unsubscribes",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            },
+            {
+              "name": "revenue_day1",
+              "eql": "sum(attributed_revenue_day_1)",
+              "format": "currency"
+            },
+            {
+              "name": "recurring_revenue",
+              "eql": "sum(attributed_recurring_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "new_monthly",
+              "eql": "sum(attributed_initial_recurring_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "zero_revenue_messages",
+              "eql": "count(distinct case when attributed_revenue=0 then message_id end)",
+              "format": "number"
+            },
+            {
+              "name": "cost",
+              "eql": "sum(spend)",
+              "format": "currency"
+            },
+            {
+              "name": "new_people",
+              "eql": "sum(origin_person_count)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Over time",
+      "components": [
+        {
+          "id": "monthly",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "month",
+              "eql": "month(publish_date)"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "cost",
+              "eql": "sum(spend)",
+              "format": "currency"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "optouts",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "id": "weekly",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "week",
+              "eql": "week(publish_date)"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "cost",
+              "eql": "sum(spend)",
+              "format": "currency"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "optouts",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Platforms and types",
+      "components": [
+        {
+          "id": "platforms",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "platform",
+              "eql": "case when bot_path like '%Switchboard%' then 'Switchboard' when bot_path like '%Tatango%' then 'Tatango' else ifnull(nullif(bot_nickname,''),ifnull(nullif(bot_label,''),'Other')) end"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "cost",
+              "eql": "sum(spend)",
+              "format": "currency"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "optouts",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "id": "types",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "type",
+              "eql": "case when left(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),4)<>'LOC_' then 'Other' when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',2),'_',-1)='BC' then 'Broadcast'\n  when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',2),'_',-1)='P2P' then 'Peer-to-peer' when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',2),'_',-1)='RTL' then 'Rented list' else 'Other' end"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "cost",
+              "eql": "sum(spend)",
+              "format": "currency"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "optouts",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "id": "purposes",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "purpose",
+              "eql": "case when left(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),4)<>'LOC_' then 'Other' when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',3),'_',-1)='FR' then 'Fundraising ask'\n  when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',3),'_',-1)='PET' then 'Petition' when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',3),'_',-1)='SURV' then 'Survey' else 'Other' end"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "messages",
+              "eql": "count(distinct message_id)",
+              "format": "number"
+            },
+            {
+              "name": "sent",
+              "eql": "sum(sent)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(attributed_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "gifts",
+              "eql": "sum(attributed_transactions)",
+              "format": "number"
+            },
+            {
+              "name": "cost",
+              "eql": "sum(spend)",
+              "format": "currency"
+            },
+            {
+              "name": "clicks",
+              "eql": "sum(clicks)",
+              "format": "number"
+            },
+            {
+              "name": "optouts",
+              "eql": "sum(unsubscribes)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Top texts",
+      "components": [
+        {
+          "id": "top_texts",
+          "component": "Table",
+          "query": {
+            "table": "global_message_summary",
+            "columns": [
+              {
+                "eql": "min(publish_date)",
+                "name": "send_date"
+              },
+              {
+                "eql": "ifnull(nullif(max(label),''),ifnull(nullif(max(subject),''),'(no name)'))",
+                "name": "message"
+              },
+              {
+                "eql": "max(case when bot_path like '%Switchboard%' then 'Switchboard' when bot_path like '%Tatango%' then 'Tatango' else ifnull(nullif(bot_nickname,''),ifnull(nullif(bot_label,''),'Other')) end)",
+                "name": "platform"
+              },
+              {
+                "eql": "max(case when left(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),4)<>'LOC_' then 'Other' when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',2),'_',-1)='BC' then 'Broadcast'\n  when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',2),'_',-1)='P2P' then 'Peer-to-peer' when substring_index(substring_index(upper(ifnull(nullif(label,''),ifnull(nullif(subject,''),''))),'_',2),'_',-1)='RTL' then 'Rented list' else 'Other' end)",
+                "name": "type"
+              },
+              {
+                "eql": "sum(sent)",
+                "name": "sent"
+              },
+              {
+                "eql": "sum(attributed_revenue)",
+                "name": "revenue"
+              },
+              {
+                "eql": "sum(attributed_transactions)",
+                "name": "gifts"
+              },
+              {
+                "eql": "sum(spend)",
+                "name": "cost"
+              },
+              {
+                "eql": "sum(clicks)",
+                "name": "clicks"
+              },
+              {
+                "eql": "sum(unsubscribes)",
+                "name": "optouts"
+              },
+              {
+                "eql": "sum(attributed_initial_recurring_transactions)",
+                "name": "new_monthly"
+              }
+            ],
+            "conditions": [
+              {
+                "eql": "channel='sms' and publish_date is not null"
+              }
+            ],
+            "groupBy": [
+              {
+                "eql": "message_id"
+              }
+            ],
+            "orderBy": [
+              {
+                "eql": "sum(attributed_revenue)",
+                "orderByDirection": "desc"
+              }
+            ],
+            "limit": 10
+          }
+        }
+      ]
+    }
+  ]
+}

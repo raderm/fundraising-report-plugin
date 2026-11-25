@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fundraising Report · Frakture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&family=Outfit:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="report.css">
+  <style>:root { --ef-accent: #007a99; --ef-accent-4: #3e8e58; } @media (prefers-color-scheme: dark) { :root { --ef-accent: #01ccff; --ef-accent-4: #6ac481; } }</style>
+</head>
+<body data-auth="checking">
+<div class="fr-wrap">
+  <section class="fr-gate" aria-labelledby="gate-h">
+    <h1 id="gate-h">Fundraising Report</h1>
+    <p class="fr-gate-copy">Live fundraising reporting from engine9. Connect with your engine9 login and pick an account.</p>
+    <p class="fr-gate-copy">Every figure is read from the account's own engine9 database when the page opens. Nothing is copied or stored elsewhere.</p>
+  </section>
+
+  <div class="ef-root">
+    <div class="ef-toolbar">
+      <span class="ef-brand"><b>frakture<i>.</i></b>Fundraising Report</span>
+      <span id="app-period" class="fr-period">
+        <span id="period-label">Period</span>
+        <span class="ef-seg" role="group" aria-labelledby="period-label">
+          <button type="button" class="ef-segbtn" data-period="ytd" aria-pressed="true">Year to date</button>
+          <button type="button" class="ef-segbtn" data-period="qtd" aria-pressed="false">FEC quarter</button>
+          <button type="button" class="ef-segbtn" data-period="mtd" aria-pressed="false">Month to date</button>
+          <button type="button" class="ef-segbtn" data-period="30d" aria-pressed="false">Past 30 days</button>
+        </span>
+      </span>
+      <span data-e9-mcp-button></span>
+    </div>
+    <div id="app">
+      <nav class="ef-tabs" role="tablist" aria-label="Report pages">
+        <button type="button" class="ef-tab" role="tab" data-tab="transactions">All Donations</button>
+        <button type="button" class="ef-tab" role="tab" data-tab="email">Email</button>
+        <button type="button" class="ef-tab" role="tab" data-tab="sms">SMS</button>
+        <button type="button" class="ef-tab" role="tab" data-tab="ads">Advertising</button>
+        <button type="button" class="ef-tab" role="tab" data-tab="recurring">Recurring Donors</button>
+      </nav>
+      <main class="ef" id="tab" role="tabpanel"></main>
+    </div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="definitions.js"></script>
+<script src="agency-sql.js"></script>
+<script src="https://unpkg.com/@engine9/id@1.18.0/dist/id.iife.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

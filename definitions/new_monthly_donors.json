@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "name": "New Monthly Donors",
+  "description": "People whose first recurring payment on record falls in the window.",
+  "tags": [
+    "Fundraising"
+  ],
+  "data_sources": {
+    "default": {
+      "table": "first_gift",
+      "subquery": {
+        "table": "transaction",
+        "columns": [
+          {
+            "eql": "transaction.person_id",
+            "name": "person_id"
+          },
+          {
+            "eql": "min(transaction.ts)",
+            "name": "first_ts"
+          }
+        ],
+        "conditions": [
+          {
+            "eql": "transaction.person_id is not null and transaction.recurs_id > 0"
+          }
+        ],
+        "groupBy": [
+          {
+            "eql": "transaction.person_id"
+          }
+        ]
+      }
+    }
+  },
+  "filters": {
+    "title": "Window",
+    "type": "object",
+    "properties": {
+      "first_after": {
+        "type": "string",
+        "title": "First gift after",
+        "description": "Exclusive lower bound on the first gift, e.g. 2025-12-31 23:59:59",
+        "filter": {
+          "column": "first_ts",
+          "operator": ">"
+        }
+      },
+      "first_before": {
+        "type": "string",
+        "title": "First gift before",
+        "description": "Exclusive upper bound on the first gift, e.g. 2026-11-26",
+        "filter": {
+          "column": "first_ts",
+          "operator": "<"
+        }
+      }
+    }
+  },
+  "sections": [
+    {
+      "title": "New donors",
+      "components": [
+        {
+          "id": "new_donors",
+          "component": "Table",
+          "metrics": [
+            {
+              "name": "new_donors",
+              "eql": "count(*)",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

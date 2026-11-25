@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "name": "Recurring Donors",
+  "description": "Recurring payments, active monthly donors and recurring revenue by month.",
+  "tags": [
+    "Fundraising"
+  ],
+  "data_sources": {
+    "default": {
+      "table": "transaction",
+      "date_column": "ts",
+      "conditions": [
+        {
+          "eql": "recurs_id > 0 and person_id is not null"
+        }
+      ]
+    }
+  },
+  "sections": [
+    {
+      "title": "Recurring payments",
+      "components": [
+        {
+          "id": "kpis",
+          "component": "Table",
+          "metrics": [
+            {
+              "name": "payments",
+              "eql": "count(*)",
+              "format": "number"
+            },
+            {
+              "name": "donors",
+              "eql": "count(distinct person_id)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(amount)",
+              "format": "currency"
+            },
+            {
+              "name": "avg_payment",
+              "eql": "sum(amount)/count(*)",
+              "format": "currency"
+            }
+          ]
+        },
+        {
+          "id": "monthly",
+          "component": "Table",
+          "dimensions": [
+            {
+              "name": "month",
+              "eql": "month(ts)"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "payments",
+              "eql": "count(*)",
+              "format": "number"
+            },
+            {
+              "name": "donors",
+              "eql": "count(distinct person_id)",
+              "format": "number"
+            },
+            {
+              "name": "revenue",
+              "eql": "sum(amount)",
+              "format": "currency"
+            },
+            {
+              "name": "avg_payment",
+              "eql": "sum(amount)/count(*)",
+              "format": "currency"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
