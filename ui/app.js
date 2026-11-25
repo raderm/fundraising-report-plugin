@@ -168,6 +168,19 @@
   const lede = (text) => el('p', { class: 'ef-lede', text });
   const moreLess = (v) => (isNaN(v) || !isFinite(v) ? '' : Math.abs(v) < 0.0005 ? ', the same as the same dates last year' : `, ${fmt.pct(Math.abs(v))} ${v < 0 ? 'less' : 'more'} than the same dates last year`);
 
+  // Read-only SQL for the Scorecard and Data Quality tabs (scorecard/queries.js).
+  const Q = window.FR_SQL || {};
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function query(name) {
+    const cacheKey = JSON.stringify([state.account, 'sql', name]);
+    if (!state.cache.has(cacheKey)) {
+      const p = sql(Q[name]);
+      p.catch(() => state.cache.delete(cacheKey));
+      state.cache.set(cacheKey, p);
+    }
+    return state.cache.get(cacheKey);
+  }
+
   // ---- Tabs --------------------------------------------------------------------
   const TABS = {
     transactions: {
@@ -353,6 +366,98 @@
       },
     },
 
+    scorecard: {
+      title: 'Scorecard',
+      async load() {
+        const [channels, months] = await Promise.all([query('SCORECARD_CHANNELS'), query('SCORECARD_MONTHS')]);
+        return { channels, months };
+      },
+      render({ channels, months }) {
+        const all = channels.find((r) => r.channel === 'All channels') || {};
+        const lyY = all.ly_year, mtY = all.mt_year;
+        const rows = channels.filter((r) => r.channel !== 'All channels');
+        const changeOf = (r) => change(r.ytd, r.ly_ytd);
+        return [
+          lede(`Revenue so far this year is ${fmt.money(num(all.ytd))}${moreLess(change(all.ytd, all.ly_ytd))}. Paced like ${lyY}, the year ends near ${fmt.money(num(all.proj_ly))}; paced like ${mtY}, near ${fmt.money(num(all.proj_mt))}. ${fmt.int(num(all.days_left))} days remain.`),
+          tiles(
+            tile('Revenue so far', all.ytd, all.ly_ytd, fmt.money, { note: `${fmt.int(num(all.gifts_ytd))} gifts · same dates ${lyY} ${fmt.money(num(all.ly_ytd))}` }),
+            tile(`Projected year-end (${lyY} pace)`, all.proj_ly, all.ly_full, fmt.money, { note: `${lyY} full year ${fmt.money(num(all.ly_full))}` }),
+            tile(`Projected year-end (${mtY} pace)`, all.proj_mt, all.mt_full, fmt.money, { note: `${mtY} full year ${fmt.money(num(all.mt_full))}` }),
+            tile(`Raised after today in ${lyY}`, all.ly_rest, NaN, fmt.money, { note: `${fmt.pct(div(all.ly_rest, all.ly_full))} of the ${lyY} total` })),
+          card('sc-channels', 'Year-end projection by channel', `This year's total so far, grown by the share each comparison year raised after today's date. Always the calendar year, whatever period is picked. A dash means that channel had no revenue to pace from.`, table([
+            { label: 'Channel', value: (r) => r.channel },
+            { label: 'So far', value: (r) => num(r.ytd), fmt: fmt.money },
+            { label: `Same dates ${lyY}`, value: (r) => num(r.ly_ytd), fmt: fmt.money },
+            { label: 'Change', value: changeOf, fmt: fmt.change, cls: (r) => { const v = changeOf(r); return isNaN(v) ? '' : v > 0 ? 'ef-good' : v < 0 ? 'ef-bad' : ''; } },
+            { label: `Year-end, ${lyY} pace`, value: (r) => num(r.proj_ly), fmt: fmt.money },
+            { label: `Year-end, ${mtY} pace`, value: (r) => num(r.proj_mt), fmt: fmt.money },
+            { label: `${lyY} full year`, value: (r) => num(r.ly_full), fmt: fmt.money },
+          ], rows)),
+          card('sc-months', 'Revenue by month', `This year, ${lyY} and ${mtY}. The current month is still in progress.`, table([
+            { label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] },
+            { label: 'This year', value: (r) => (num(r.month_no) <= num(r.this_month) ? num(r.ty) : NaN), fmt: fmt.money },
+            { label: String(lyY), value: (r) => num(r.ly), fmt: fmt.money },
+            { label: String(mtY), value: (r) => num(r.mt), fmt: fmt.money },
+          ], months)),
+        ];
+      },
+    },
+
+    dq: {
+      title: 'Data Quality',
+      async load() {
+        const [summary, off, months, pages, acq] = await Promise.all(['DQ_SUMMARY', 'DQ_OFF_CONVENTION', 'DQ_MONTHS', 'DQ_PAGES', 'DQ_ACQUISITION_COST'].map(query));
+        return { summary, off, months, pages, acq: acq[0] || {} };
+      },
+      render({ summary, off, months, pages, acq }) {
+        const t = summary.find((r) => r.period === 'This year') || {}, l = summary.find((r) => r.period === 'Last year') || {};
+        const share = (r, k) => div(r[k + '_revenue'], r.revenue);
+        const mk = (label, k, opts = {}) => tile(label, share(t, k), share(l, k), fmt.pct, { lowerIsBetter: true, ...opts, note: `${fmt.money(num(t[k + '_revenue']))} · ${fmt.int(num(t[k + '_gifts']))} gifts · last year ${fmt.pct(share(l, k))}` });
+        const byMonth = new Map();
+        for (const r of months) {
+          const m = byMonth.get(r.month_no) || { month_no: r.month_no };
+          m[num(r.y) === 0 ? 'ty' : 'ly'] = r;
+          byMonth.set(r.month_no, m);
+        }
+        const unread = (r) => (r ? div(r.unreadable_revenue, r.revenue) : NaN);
+        return [
+          lede(`${fmt.pct(share(t, 'uncoded'))} of this year's revenue (${fmt.money(num(t.uncoded_revenue))}) came in with no source code, and ${fmt.pct(share(t, 'offconv'))} used a code outside the LOC_ and MS_ naming convention. Gifts are counted for the year to date, whatever period is picked.`),
+          tiles(
+            mk('No source code', 'uncoded'),
+            mk('Outside the LOC_ / MS_ convention', 'offconv'),
+            mk('Source code has no channel', 'nochannel'),
+            mk('Source code has no campaign', 'nocampaign'),
+            mk('No readable channel', 'unreadable', { note: `Revenue that can't be credited to a channel · ${fmt.money(num(t.unreadable_revenue))}` }),
+            tile('Linked to an email, text or ad', share(t, 'linked'), share(l, 'linked'), fmt.pct, { note: `${fmt.money(num(t.linked_revenue))} · ${fmt.int(num(t.linked_gifts))} gifts · last year ${fmt.pct(share(l, 'linked'))}` })),
+          card('dq-off', 'Codes outside the naming convention', 'Gifts whose source code doesn\'t start with LOC_ or MS_, by the channel they read as.', table([
+            { label: 'Reads as', value: (r) => r.channel },
+            { label: 'Codes', value: (r) => num(r.codes), fmt: fmt.int },
+            { label: 'Gifts', value: (r) => num(r.gifts), fmt: fmt.int },
+            { label: 'Raised', value: (r) => num(r.revenue), fmt: fmt.money },
+          ], off, 'Every source code this year follows the convention.')),
+          card('dq-months', 'Revenue with no readable channel, by month', 'Share of each month\'s revenue that has no source code, or a code that reads as no channel.', table([
+            { label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] },
+            { label: 'This year', value: (r) => unread(r.ty), fmt: fmt.pct },
+            { label: 'Last year', value: (r) => unread(r.ly), fmt: fmt.pct },
+          ], [...byMonth.values()].sort((a, b) => num(a.month_no) - num(b.month_no)))),
+          card('dq-pages', 'Pages taking gifts with no source code', 'The 10 pages (for ActBlue, the contribution form) with the most uncoded revenue this year.', table([
+            { label: 'Page', value: (r) => r.page },
+            { label: 'Gifts', value: (r) => num(r.gifts), fmt: fmt.int },
+            { label: 'Raised', value: (r) => num(r.revenue), fmt: fmt.money },
+          ], pages, 'Every gift this year has a source code.')),
+          card('dq-acq', 'Acquisition costs on file', 'Source codes used this year that have an acquisition cost in the source code dictionary.', table([
+            { label: '', value: (r) => r.label },
+            { label: 'Source codes', value: (r) => r.codes, fmt: fmt.int },
+            { label: 'With a cost', value: (r) => r.with_cost, fmt: fmt.int },
+            { label: 'Cost on file', value: (r) => r.cost, fmt: fmt.money },
+          ], [
+            { label: 'All source codes', codes: num(acq.codes), with_cost: num(acq.codes_with_cost), cost: num(acq.cost_total) },
+            { label: 'Rented lists (RTL)', codes: num(acq.rtl_codes), with_cost: num(acq.rtl_codes_with_cost), cost: num(acq.rtl_cost) },
+          ]), num(acq.codes_bad_cost) ? el('p', { class: 'ef-sum-meta', text: `${fmt.int(num(acq.codes_bad_cost))} codes hold a cost of $1 million or more, which is left out as an error.` }) : null),
+        ];
+      },
+    },
+
     recurring: {
       title: 'Recurring Donors',
       async load(w) {
@@ -406,10 +511,17 @@
     return me;
   }
 
-  const MISSING = /doesn't exist|no such table|ER_NO_SUCH_TABLE/i;
+  // engine9 reports a failed tool call to the page without the database's own
+  // message ("sql failed"), so don't rely on error text to learn what's wrong:
+  // ask which tables exist.
+  async function haveNotesTables() {
+    const res = await call('sql', { command: 'tables', filter: '^fundraising_report_' });
+    const names = ((res.result || {}).tables || []).map((t) => (typeof t === 'string' ? t : t.name || t.table_name || Object.values(t)[0]));
+    return names.includes(SUMMARY) && names.includes(NOTE);
+  }
   function noteError(err) {
     const msg = String((err && err.message) || err);
-    if (/denied|permission|not allowed|forbidden/i.test(msg)) return `Your engine9 login can't change this account's database: ${msg}`;
+    if (/^sql failed$|^tool_error$/i.test(msg) || !msg) return "engine9 refused the request without saying why. Your login may not be allowed to use the sql tool on this account, or the account's database may be unavailable.";
     return msg;
   }
 
@@ -439,6 +551,11 @@
     const draw = async () => {
       let summary, notes;
       try {
+        if (!(await haveNotesTables())) {
+          notesCard.remove();
+          setupCard(summaryCard, draw);
+          return;
+        }
         [summary, notes] = await Promise.all([
           sql(`SELECT * FROM ${SUMMARY} WHERE report_path = ${lit(path)} AND section = ${lit(tabKey)} AND period = ${lit(state.period)} AND status = 'published' ORDER BY modified_at DESC LIMIT 1`),
           sql(`SELECT * FROM ${NOTE} WHERE report_path = ${lit(path)} AND status <> 'archived' ORDER BY created_at DESC LIMIT 50`),
@@ -446,11 +563,6 @@
         notesAvailable = true;
       } catch (err) {
         notesAvailable = false;
-        if (MISSING.test(String((err && err.message) || err))) {
-          notesCard.remove();
-          setupCard(summaryCard, draw);
-          return;
-        }
         summaryCard.replaceChildren(el('h2', { class: 'ef-h2', text: 'Executive summary' }), el('p', { class: 'ef-sum-meta', text: noteError(err) }));
         notesCard.remove();
         return;

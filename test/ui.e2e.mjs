@@ -58,9 +58,9 @@ const STUB = `(() => {
       }
       if (tool === 'user') return { uid: 'data.engine9.ai:abc', email: 'pat@frakture.com' };
       if (tool === 'sql') {
-        const res = await window.__sql(args.sql);
+        const res = await window.__sql(args);
         if (res.error) throw new Error(res.error);
-        return { ok: true, data: res.data };
+        return res.result ? { ok: true, result: res.result } : { ok: true, data: res.data };
       }
       throw new Error('unexpected tool ' + tool);
     },
@@ -85,8 +85,28 @@ function toSqlite(text) {
     .replace(/\) DEFAULT CHARSET=\S+ COLLATE=\S+$/, ')')
     .replace(/ LIMIT 10000$/, '');
 }
-function runSql(text) {
+// What the MariaDB-only report queries return (the real ones run on engine9).
+const CANNED = [
+  [/^WITH t AS \(SELECT CASE WHEN channel/, [
+    { channel: 'All channels', ytd: '6595140.40', gifts_ytd: '491958', ly_ytd: '6314280.04', ly_rest: '487590.90', mt_ytd: '11509479.38', mt_rest: '842012.37', ly_year: 2025, mt_year: 2022, days_left: 35, ly_full: '6801870.94', mt_full: '12351491.75', proj_ly: '7105000.00', proj_mt: '7077000.00' },
+    { channel: 'Rented lists', ytd: '1981693.98', gifts_ytd: '125525', ly_ytd: '1598261.90', ly_rest: '78915.39', mt_ytd: '0.00', mt_rest: '0.00', proj_ly: '2079000.00', proj_mt: null, ly_full: '1677177.29' }]],
+  [/^SELECT MONTH\(m\.ts\)/, [{ month_no: 1, ty: '487549.34', ly: '384570.00', mt: '633313.82', this_month: 11 }, { month_no: 12, ty: '0.00', ly: '411408.07', mt: '615881.00', this_month: 11 }]],
+  [/^SELECT period, COUNT\(\*\) AS gifts/, [
+    { period: 'This year', gifts: 491958, revenue: '6595140.40', uncoded_gifts: '31328', uncoded_revenue: '394560.93', offconv_gifts: '15886', offconv_revenue: '272379.73', nochannel_gifts: '136078', nochannel_revenue: '1817397.70', nocampaign_gifts: '460630', nocampaign_revenue: '6200579.47', linked_gifts: '239387', linked_revenue: '3002669.21', unreadable_gifts: '60000', unreadable_revenue: '501982.38' },
+    { period: 'Last year', gifts: 480805, revenue: '6314280.04', uncoded_gifts: '15991', uncoded_revenue: '300417.21', offconv_gifts: '21262', offconv_revenue: '295298.95', nochannel_gifts: '111398', nochannel_revenue: '1309136.16', nocampaign_gifts: '464814', nocampaign_revenue: '6013862.83', linked_gifts: '195743', linked_revenue: '2372991.75', unreadable_gifts: '50000', unreadable_revenue: '459193.34' }]],
+  [/^SELECT ch AS channel/, [{ channel: 'Website', codes: 40, gifts: 9000, revenue: '120000.00' }]],
+  [/^SELECT DATE_FORMAT\(ts, '%m'\)/, [{ month_no: '01', y: 0, revenue: '487549.34', unreadable_revenue: '40000.00', uncoded_revenue: '30000.00' }, { month_no: '01', y: 1, revenue: '384570.00', unreadable_revenue: '30000.00', uncoded_revenue: '20000.00' }]],
+  [/^SELECT COALESCE\(NULLIF\(remote_page_name/, [{ page: 'ecu-homepage', gifts: 900, revenue: '61000.00' }]],
+  [/^WITH c AS \(SELECT DISTINCT m\.final_source_code_id/, [{ codes: 900, codes_with_cost: 120, codes_bad_cost: 2, codes_with_cpp: 80, cost_total: '480000.00', rtl_codes: 60, rtl_codes_with_cost: 50, rtl_cost: '400000.00' }]],
+];
+function runSql(args) {
+  if (args.command === 'tables') {
+    return { result: { tables: db.prepare("select name from sqlite_master where type='table' and name like 'fundraising_report_%'").all().map((r) => r.name) } };
+  }
+  const text = args.sql;
   sqlLog.push(text);
+  const canned = CANNED.find(([re]) => re.test(text));
+  if (canned) return { data: canned[1] };
   try {
     const q = toSqlite(text);
     if (/^\s*select/i.test(q)) return { data: db.prepare(q).all().map((r) => ({ ...r })) };
@@ -150,7 +170,7 @@ await page.waitForSelector('#transactions-summary .ef-sum-head');
 out.summary = await page.textContent('#transactions-summary .ef-sum-head');
 
 // Every tab renders.
-for (const tab of ['email', 'sms', 'ads', 'recurring']) {
+for (const tab of ['scorecard', 'email', 'sms', 'ads', 'recurring', 'dq']) {
   await page.click(`.ef-tab[data-tab="${tab}"]`);
   await page.waitForFunction((t) => document.querySelector('#tab h1')?.textContent && !document.querySelector('#loading') && location.hash === '#' + t, tab);
   out[tab] = (await page.textContent('#tab .ef-lede')) || (await page.textContent('#tab'));

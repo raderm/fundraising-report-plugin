@@ -2,6 +2,7 @@
 //   ui/definitions.js — every report as portable JSON (window.FR_DEFINITIONS)
 //   ui/agency-sql.js  — agency/sql.js and the table schema (window.FR_AGENCY)
 //   definitions/*.json — the same reports as files, for agents and other hosts
+//   ui/scorecard-sql.js — scorecard/queries.js (window.FR_SQL)
 // Run after changing a report or the schema:  npm run build
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { reports } from '../reports/index.js';
@@ -22,4 +23,7 @@ writeFileSync(
   new URL('ui/agency-sql.js', root),
   `${header}(function () {\n${sql}\nconst tables = ${JSON.stringify(tables)};\nwindow.FR_AGENCY = { tables, ${names.join(', ')} };\n})();\n`
 );
+const queries = readFileSync(new URL('scorecard/queries.js', root), 'utf8').replace(/^export /gm, '');
+const qnames = [...queries.matchAll(/^const ([A-Z_]+) =/gm)].map((m) => m[1]);
+writeFileSync(new URL('ui/scorecard-sql.js', root), `${header}(function () {\n${queries}\nwindow.FR_SQL = { ${qnames.join(', ')} };\n})();\n`);
 console.log('built ui/definitions.js, ui/agency-sql.js, definitions/', Object.keys(defs).join(', '));

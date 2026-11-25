@@ -34,11 +34,13 @@
     </div>
     <div id="app">
       <nav class="ef-tabs" role="tablist" aria-label="Report pages">
+        <button type="button" class="ef-tab" role="tab" data-tab="scorecard">Scorecard</button>
         <button type="button" class="ef-tab" role="tab" data-tab="transactions">All Donations</button>
         <button type="button" class="ef-tab" role="tab" data-tab="email">Email</button>
         <button type="button" class="ef-tab" role="tab" data-tab="sms">SMS</button>
         <button type="button" class="ef-tab" role="tab" data-tab="ads">Advertising</button>
         <button type="button" class="ef-tab" role="tab" data-tab="recurring">Recurring Donors</button>
+        <button type="button" class="ef-tab" role="tab" data-tab="dq">Data Quality</button>
       </nav>
       <main class="ef" id="tab" role="tabpanel"></main>
     </div>
@@ -47,6 +49,7 @@
 <script src="config.js"></script>
 <script src="definitions.js"></script>
 <script src="agency-sql.js"></script>
+<script src="scorecard-sql.js"></script>
 <script src="https://unpkg.com/@engine9/id@1.18.0/dist/id.iife.js"></script>
 <script src="app.js"></script>
 </body>

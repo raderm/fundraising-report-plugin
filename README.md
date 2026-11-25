@@ -6,7 +6,7 @@ It has three parts:
 
 | Part | What it is | Where |
 |---|---|---|
-| Reports | Seven EQL report definitions over the standard engine9 tables (`transaction`, `source_code_dictionary`, `global_message`, …). Read-only. | `reports/`, built to `definitions/*.json` |
+| Reports | Seven EQL report definitions over the standard engine9 tables (`transaction`, `source_code_dictionary`, `global_message`, …), plus the read-only SQL for the Scorecard and Data Quality tabs. Nothing is written. | `reports/`, `scorecard/`, built to `definitions/*.json` |
 | Agency notes | Two tables the plugin owns, `fundraising_report_summary` and `fundraising_report_note`, for executive summaries and team notes. The only thing the plugin writes. | `agency/schema.js`, `agency/sql.js` |
 | Page | A static page with no server of its own. It signs in to engine9, runs the reports and reads and writes notes, all through MCP. | `ui/` |
 
@@ -15,7 +15,7 @@ It has three parts:
 The page and agents call the engine9 MCP server (`https://data.engine9.ai/mcp`) as you, after you sign in with your engine9 (Delegate) login:
 
 - **`report run`** with a portable `definition` from `definitions/` (or by `path`, if the plugin is installed on the account; see below).
-- **`sql`** to read and write the two `fundraising_report_*` tables, and once per account, to create them.
+- **`sql`** to read and write the two `fundraising_report_*` tables (and once per account, to create them), and to run the read-only SELECTs behind the Scorecard and Data Quality tabs (`scorecard/queries.js`).
 - **`user`** to get your email, which is recorded as the author of anything you write.
 
 So you see exactly the accounts your engine9 login can open, and a note can only be saved where your login can write to the account database (today, account admins and superadmins). The plugin holds no keys and stores nothing outside the account's own database.
@@ -70,6 +70,9 @@ The end-to-end test runs the SQL the page sends in an in-memory SQLite database,
 | `…:email` | Email |
 | `…:sms` | SMS |
 | `…:advertising` | Advertising |
+| `scorecard/queries.js` (SQL, not a report definition) | Scorecard, Data Quality |
 | `…:recurring` | Recurring Donors |
 
-Not ported yet, because they need EQL features the report runner lacks (window functions, `HAVING`): donor retention, recurring cohorts, the scorecard and projection, acquisition and data quality.
+The Scorecard (year-end projection by channel) and Data Quality (coding gaps, year to date) tabs run as plain read-only SQL through `sql`, because they need REGEXP, window functions and per-year comparisons that EQL reports can't express. Data Quality is computed live; the original dashboard rebuilt it weekly from a snapshot.
+
+Not ported yet: donor retention, recurring cohorts, and the Acquisition tab (email sign-ups matched to donors).
