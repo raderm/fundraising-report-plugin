@@ -25,7 +25,7 @@ const server = http.createServer(async (req, res) => {
 const STUB = `(() => {
   const rows = {
     'All Donations': { kpis: [{ revenue: '6595140.40', gifts: 491958, donors: 140574, avg_gift: '13.40', recurring_revenue: '1411538.66', recurring_gifts: '122221', uncoded_revenue: '394560.93', unattributed_revenue: '501982.38', big_gift_revenue: '221583.00', big_gifts: '143' }],
-      monthly: [{ month_no: '2026-10-01T00:00:00.000Z', revenue: '809640.26' }, { month_no: '2026-11-01T00:00:00.000Z', revenue: '489488.76' }],
+      monthly: [{ month_no: '2026-10-01T00:00:00.000Z', one_time: '700000', recurring: '109640.26', revenue: '809640.26' }, { month_no: '2026-11-01T00:00:00.000Z', one_time: '400000', recurring: '89488.76', revenue: '489488.76' }],
       channels: [{ channel: 'Rented lists', revenue: '1981693.98', gifts: 125525, donors: 82121, avg_gift: '15.78' }, { channel: 'Email', revenue: '1517832.93', gifts: 113219, donors: 30477, avg_gift: '13.40' }],
       sizes: [{ size_order: 1, gift_size: 'Under $25', gifts: 424880, revenue: '3487967.28' }],
       top_codes: [{ source: 'LOC_EM_FR_2026', channel: 'Email', revenue: '2000', gifts: 10, donors: 9, avg_gift: '200' }],
@@ -87,6 +87,23 @@ function toSqlite(text) {
 }
 // What the MariaDB-only report queries return (the real ones run on engine9).
 const CANNED = [
+  [/^WITH fg AS .*ORDER BY donors DESC LIMIT 12$/s, [{ source: 'LOC_EM_FR_2026', channel: 'Email', donors: 900, first_amt: '25000', later_amt: '30000', gave_again: '400', started_monthly: '30', active_90: '300' }]],
+  [/^WITH fg AS .*DATE_FORMAT\(fg\.fts/s, [
+    { month: '2025-11-01', channel: 'Email', donors: 1800, first_amt: '30000', later_amt: '52000', gave_again: '800', started_monthly: '2', active_90: '100' },
+    { month: '2026-10-01', channel: 'Rented lists', donors: 4000, first_amt: '70000', later_amt: '60000', gave_again: '1400', started_monthly: '100', active_90: '1400' },
+    { month: '2026-11-01', channel: 'Meta ads', donors: 700, first_amt: '13000', later_amt: '8000', gave_again: '190', started_monthly: '10', active_90: '320' }]],
+  [/^WITH fg AS /, [
+    { period: 'ty', channel: 'Email', donors: 12204, first_amt: '226301.54', later_amt: '267528.73', gave_again: '4503', started_monthly: '324', active_90: '5359' },
+    { period: 'ty', channel: 'Meta ads', donors: 7130, first_amt: '131346.52', later_amt: '84286.03', gave_again: '1932', started_monthly: '118', active_90: '3252' },
+    { period: 'ty', channel: 'Rented lists', donors: 40445, first_amt: '722540.45', later_amt: '780891.26', gave_again: '14484', started_monthly: '1129', active_90: '14143' },
+    { period: 'ly', channel: 'Email', donors: 18295, first_amt: '299774.24', later_amt: '523915.73', gave_again: '8135', started_monthly: '14', active_90: '1070' }]],
+  [/^SELECT CASE WHEN date >= /, [{ period: 'ty', channel: 'Meta ads', cost: '470050.15' }, { period: 'ty', channel: 'Google ads', cost: '3542.57' }, { period: 'ly', channel: 'Meta ads', cost: '260880.47' }]],
+  [/^SELECT CASE WHEN date_created >= /, [{ period: 'ty', source: 'IMPORT', signups: 667875, still_subscribed: '390194' }, { period: 'ly', source: 'IMPORT', signups: 190072, still_subscribed: '76055' }, { period: 'ty', source: 'EM', signups: 23130, still_subscribed: '7914' }]],
+  [/^SELECT CASE channel WHEN 'email'/, [{ channel: 'Meta ads', cost: '470050.15', ly_cost: '260880.47' }, { channel: 'Google ads', cost: '3542.57', ly_cost: '0.00' }]],
+  [/^SELECT ROUND\(COALESCE\(SUM\(d\.acquisition_cost\)/, [{ list_cost: '0.00', codes: 0 }]],
+  [/^SELECT ch AS channel, COUNT\(DISTINCT CASE WHEN y = 0/, [{ channel: 'Email', new_donors: 12161, ly_new_donors: 18273 }, { channel: 'Rented lists', new_donors: 53201, ly_new_donors: 45063 }]],
+  [/^SELECT MONTH\(date_created\)/, [{ month_no: 1, ty: '161305', ly: '6344' }, { month_no: 2, ty: '37643', ly: '47329' }]],
+  [/^SELECT COALESCE\(NULLIF\(subscription_status/, [{ status: 'Subscribed', people: 4384696 }, { status: 'Unsubscribed', people: 172399 }]],
   [/^WITH t AS \(SELECT CASE WHEN channel/, [
     { channel: 'All channels', ytd: '6595140.40', gifts_ytd: '491958', ly_ytd: '6314280.04', ly_rest: '487590.90', mt_ytd: '11509479.38', mt_rest: '842012.37', ly_year: 2025, mt_year: 2022, days_left: 35, ly_full: '6801870.94', mt_full: '12351491.75', proj_ly: '7105000.00', proj_mt: '7077000.00' },
     { channel: 'Rented lists', ytd: '1981693.98', gifts_ytd: '125525', ly_ytd: '1598261.90', ly_rest: '78915.39', mt_ytd: '0.00', mt_rest: '0.00', proj_ly: '2079000.00', proj_mt: null, ly_full: '1677177.29' }]],
@@ -170,7 +187,7 @@ await page.waitForSelector('#transactions-summary .ef-sum-head');
 out.summary = await page.textContent('#transactions-summary .ef-sum-head');
 
 // Every tab renders.
-for (const tab of ['scorecard', 'email', 'sms', 'ads', 'recurring', 'dq']) {
+for (const tab of ['scorecard', 'email', 'sms', 'ads', 'acquisition', 'recurring', 'dq']) {
   await page.click(`.ef-tab[data-tab="${tab}"]`);
   await page.waitForFunction((t) => document.querySelector('#tab h1')?.textContent && !document.querySelector('#loading') && location.hash === '#' + t, tab);
   out[tab] = (await page.textContent('#tab .ef-lede')) || (await page.textContent('#tab'));

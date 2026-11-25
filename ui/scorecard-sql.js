@@ -63,5 +63,60 @@ const DQ_PAGES = `SELECT COALESCE(NULLIF(remote_page_name, ''), '(no page name)'
 /** How many of the source codes used this year have an acquisition cost in the source code dictionary. */
 const DQ_ACQUISITION_COST = `WITH c AS (SELECT DISTINCT m.final_source_code_id AS id FROM \`transaction\` m WHERE m.ts >= ${YEAR_START} AND m.ts < ${TOMORROW}), d AS (SELECT d.source_code_id, UPPER(COALESCE(d.source_code_channel, '')) AS scc, d.acquisition_cost AS cost, d.acquisition_cost_per_person AS cpp, (d.acquisition_cost > 0 AND d.acquisition_cost < 1000000) AS ok_cost, (d.acquisition_cost >= 1000000) AS bad_cost, (d.acquisition_cost_per_person > 0 AND d.acquisition_cost_per_person < 10000) AS ok_cpp FROM c JOIN source_code_dictionary d ON d.source_code_id = c.id) SELECT COUNT(*) AS codes, SUM(ok_cost) AS codes_with_cost, SUM(bad_cost) AS codes_bad_cost, SUM(ok_cpp) AS codes_with_cpp, ROUND(COALESCE(SUM(CASE WHEN ok_cost THEN cost END), 0), 2) AS cost_total, SUM(scc = 'RTL') AS rtl_codes, SUM(scc = 'RTL' AND (ok_cost OR ok_cpp)) AS rtl_codes_with_cost, ROUND(COALESCE(SUM(CASE WHEN scc = 'RTL' AND ok_cost THEN cost END), 0), 2) AS rtl_cost FROM d`;
 
-window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_PAGES, DQ_ACQUISITION_COST };
+// ---- Scorecard: cost, new donors and list growth ------------------------------
+
+const SC_CHANNEL_OF_MESSAGE = `CASE channel WHEN 'email' THEN 'Email' WHEN 'sms' THEN 'Text (SMS)' WHEN 'facebook_ad' THEN 'Meta ads' WHEN 'google_ad' THEN 'Google ads' ELSE NULL END`;
+
+/**
+ * Tracked cost by channel for this year to date and the same dates last year:
+ * sending and ad spend recorded on messages. Rented and bought list costs sit on
+ * the source code dictionary with no date, so they are returned separately
+ * (list_cost, this year's codes only).
+ */
+const SCORECARD_COST = `SELECT ${SC_CHANNEL_OF_MESSAGE} AS channel, ROUND(SUM(CASE WHEN YEAR(date) = YEAR(CURDATE()) THEN COALESCE(spend_override, spend) ELSE 0 END), 2) AS cost, ROUND(SUM(CASE WHEN YEAR(date) = YEAR(CURDATE()) - 1 THEN COALESCE(spend_override, spend) ELSE 0 END), 2) AS ly_cost FROM global_message_summary_by_date WHERE date >= MAKEDATE(YEAR(CURDATE()) - 1, 1) AND date < CURDATE() + INTERVAL 1 DAY - INTERVAL (YEAR(CURDATE()) - YEAR(date)) YEAR AND ${SC_CHANNEL_OF_MESSAGE} IS NOT NULL GROUP BY 1`;
+
+/** Cost of the rented-list (RTL) source codes used this year, from the source code dictionary. */
+const SCORECARD_LIST_COST = `SELECT ROUND(COALESCE(SUM(d.acquisition_cost), 0), 2) AS list_cost, COUNT(*) AS codes FROM (SELECT DISTINCT m.final_source_code_id AS id FROM \`transaction\` m WHERE m.ts >= ${YEAR_START} AND m.ts < ${TOMORROW}) c JOIN source_code_dictionary d ON d.source_code_id = c.id WHERE UPPER(COALESCE(d.source_code_channel, '')) = 'RTL' AND d.acquisition_cost > 0 AND d.acquisition_cost < 1000000`;
+
+/** People whose first-ever gift fell this year (or the same dates last year), by the channel of that gift. */
+const SCORECARD_NEW_DONORS = `SELECT ch AS channel, COUNT(DISTINCT CASE WHEN y = 0 THEN person_id END) AS new_donors, COUNT(DISTINCT CASE WHEN y = 1 THEN person_id END) AS ly_new_donors FROM (SELECT x.*, ${CHANNEL_CASE} AS ch, YEAR(CURDATE()) - YEAR(ts) AS y FROM (${GIFT_ROWS} JOIN (SELECT person_id, MIN(ts) AS fts FROM \`transaction\` GROUP BY person_id HAVING MIN(ts) >= MAKEDATE(YEAR(CURDATE()) - 1, 1)) f ON f.person_id = m.person_id AND f.fts = m.ts) x WHERE ts < CURDATE() + INTERVAL 1 DAY - INTERVAL (YEAR(CURDATE()) - YEAR(ts)) YEAR) z GROUP BY ch`;
+
+/** Email sign-ups by month, this year and last (email platform records by date created). */
+const SCORECARD_LIST_MONTHS = `SELECT MONTH(date_created) AS month_no, SUM(YEAR(date_created) = YEAR(CURDATE())) AS ty, SUM(YEAR(date_created) = YEAR(CURDATE()) - 1) AS ly FROM acoustic_jsv_person WHERE date_created >= MAKEDATE(YEAR(CURDATE()) - 1, 1) GROUP BY 1 ORDER BY 1`;
+
+/** The email list as it stands today, by subscription status. */
+const SCORECARD_LIST_STATUS = `SELECT COALESCE(NULLIF(subscription_status, ''), 'Unknown') AS status, COUNT(*) AS people FROM acoustic_jsv_person GROUP BY 1 ORDER BY people DESC`;
+
+// ---- Acquisition: new donors and where they came from -----------------------------
+// These take the report's date windows ({ start, end } as YYYY-MM-DD, end exclusive).
+// Dates are checked here and are the only input; nothing else varies.
+
+const ymd = (d) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d))) throw new Error('Expected a YYYY-MM-DD date');
+  return String(d);
+};
+
+/** One row per person whose first-ever gift is on or after `from`: that gift's channel, source code, date, amount and whether it recurs. */
+const ACQ_FIRSTS = (from) => `SELECT person_id, MIN(ch) AS ch, MIN(sc) AS sc, MIN(fts) AS fts, SUM(amount) AS first_amt, MAX(recurs_id > 0) AS first_recurring FROM (SELECT x.person_id, x.ts AS fts, x.amount, x.recurs_id, x.transaction_source_code AS sc, ${CHANNEL_CASE} AS ch FROM (${GIFT_ROWS} JOIN (SELECT person_id, MIN(ts) AS fts FROM \`transaction\` GROUP BY person_id HAVING MIN(ts) >= '${ymd(from)}') f ON f.person_id = m.person_id AND f.fts = m.ts) x) y GROUP BY person_id`;
+
+const ACQ_WITH_TOTALS = (from) => `WITH fg AS (${ACQ_FIRSTS(from)}), tot AS (SELECT t.person_id, SUM(t.amount) AS total, MAX(t.ts) AS last_ts FROM \`transaction\` t JOIN fg ON fg.person_id = t.person_id GROUP BY t.person_id)`;
+
+const ACQ_MEASURES = `COUNT(*) AS donors, ROUND(SUM(fg.first_amt), 2) AS first_amt, ROUND(SUM(tot.total - fg.first_amt), 2) AS later_amt, SUM(tot.total > fg.first_amt) AS gave_again, SUM(fg.first_recurring) AS started_monthly, SUM(tot.last_ts >= CURDATE() - INTERVAL 90 DAY) AS active_90`;
+
+/** New donors in the period and the same dates last year, by the channel of their first gift. */
+const ACQ_PERIOD = (ty, ly) => `${ACQ_WITH_TOTALS(ly.start)} SELECT CASE WHEN fg.fts >= '${ymd(ty.start)}' AND fg.fts < '${ymd(ty.end)}' THEN 'ty' ELSE 'ly' END AS period, fg.ch AS channel, ${ACQ_MEASURES} FROM fg JOIN tot ON tot.person_id = fg.person_id WHERE (fg.fts >= '${ymd(ty.start)}' AND fg.fts < '${ymd(ty.end)}') OR (fg.fts >= '${ymd(ly.start)}' AND fg.fts < '${ymd(ly.end)}') GROUP BY 1, 2`;
+
+/** New donors by month of first gift and channel, from January last year (not tied to the picked period). */
+const ACQ_MONTHLY = `${ACQ_WITH_TOTALS('1900-01-01').replace("'1900-01-01'", 'MAKEDATE(YEAR(CURDATE()) - 1, 1)')} SELECT DATE_FORMAT(fg.fts, '%Y-%m-01') AS month, fg.ch AS channel, ${ACQ_MEASURES} FROM fg JOIN tot ON tot.person_id = fg.person_id GROUP BY 1, 2 ORDER BY 1`;
+
+/** The source codes that brought in the most new donors in the period. */
+const ACQ_CODES = (ty, ly) => `${ACQ_WITH_TOTALS(ty.start)} SELECT COALESCE(NULLIF(fg.sc, ''), '(no source code)') AS source, MIN(fg.ch) AS channel, ${ACQ_MEASURES} FROM fg JOIN tot ON tot.person_id = fg.person_id WHERE fg.fts >= '${ymd(ty.start)}' AND fg.fts < '${ymd(ty.end)}' GROUP BY 1 ORDER BY donors DESC LIMIT 12`;
+
+/** Ad spend recorded on messages in the period and the same dates last year. */
+const ACQ_COST = (ty, ly) => `SELECT CASE WHEN date >= '${ymd(ty.start)}' AND date < '${ymd(ty.end)}' THEN 'ty' ELSE 'ly' END AS period, ${SC_CHANNEL_OF_MESSAGE} AS channel, ROUND(SUM(COALESCE(spend_override, spend)), 2) AS cost FROM global_message_summary_by_date WHERE channel IN ('facebook_ad', 'google_ad') AND ((date >= '${ymd(ty.start)}' AND date < '${ymd(ty.end)}') OR (date >= '${ymd(ly.start)}' AND date < '${ymd(ly.end)}')) GROUP BY 1, 2`;
+
+/** Email sign-ups in the period by the type part of their source code (LOC_EM_… reads as EM), with how many are still subscribed. */
+const ACQ_SIGNUPS = (ty, ly) => `SELECT CASE WHEN date_created >= '${ymd(ty.start)}' AND date_created < '${ymd(ty.end)}' THEN 'ty' ELSE 'ly' END AS period, CASE WHEN COALESCE(source_code, '') = '' THEN '(no source code)' WHEN source_code REGEXP '^[A-Za-z0-9]{2,8}_[^_]+' THEN UPPER(SUBSTRING_INDEX(SUBSTRING_INDEX(source_code, '_', 2), '_', -1)) ELSE '(other format)' END AS source, COUNT(*) AS signups, SUM(subscription_status = 'Subscribed') AS still_subscribed FROM acoustic_jsv_person WHERE (date_created >= '${ymd(ty.start)}' AND date_created < '${ymd(ty.end)}') OR (date_created >= '${ymd(ly.start)}' AND date_created < '${ymd(ly.end)}') GROUP BY 1, 2`;
+
+window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS };
 })();

@@ -89,6 +89,21 @@
               "name": "hard_bounces",
               "eql": "sum(hard_bounces)",
               "format": "number"
+            },
+            {
+              "name": "revenue_day_1",
+              "eql": "sum(attributed_revenue_day_1)",
+              "format": "currency"
+            },
+            {
+              "name": "recurring_revenue",
+              "eql": "sum(attributed_recurring_revenue)",
+              "format": "currency"
+            },
+            {
+              "name": "zero_revenue_messages",
+              "eql": "count(distinct case when attributed_revenue=0 then message_id end)",
+              "format": "number"
             }
           ]
         }
