@@ -939,10 +939,10 @@
       title: 'Data Quality',
       async load() {
         const [summary, off, months, pages, acq] = await Promise.all(['DQ_SUMMARY', 'DQ_OFF_CONVENTION', 'DQ_MONTHS', 'DQ_PAGES', 'DQ_ACQUISITION_COST'].map(query));
-        const flaws = await query('DQ_CODE_FLAWS').catch(() => []);
-        return { summary, off, months, pages, acq: acq[0] || {}, flaws };
+        const [flaws, coverage, covCodes] = await Promise.all(['DQ_CODE_FLAWS', 'DQ_COVERAGE', 'DQ_COVERAGE_CODES'].map((n) => query(n).catch(() => [])));
+        return { summary, off, months, pages, acq: acq[0] || {}, flaws, coverage, covCodes };
       },
-      render({ summary, off, months, pages, acq, flaws }) {
+      render({ summary, off, months, pages, acq, flaws, coverage, covCodes }) {
         const t = summary.find((r) => r.period === 'This year') || {}, l = summary.find((r) => r.period === 'Last year') || {};
         const share = (r, k) => div(r[k + '_revenue'], r.revenue);
         const mk = (label, k, opts = {}) => tile(label, share(t, k), share(l, k), fmt.pct, { lowerIsBetter: true, ...opts, note: `${fmt.money(num(t[k + '_revenue']))} · ${fmt.int(num(t[k + '_gifts']))} gifts · last year ${fmt.pct(share(l, k))}` });
@@ -973,6 +973,23 @@
         issues.sort((a, b) => ORDER[a.severity] - ORDER[b.severity] || (b.rev === Infinity ? 1 : 0) - (a.rev === Infinity ? 1 : 0) || b.rev - a.rev);
         const trendMonths = [...byMonth.values()].sort((a, b) => num(a.month_no) - num(b.month_no)).map((m) => ({ ...m, ty_share: unread(m.ty), ly_share: unread(m.ly), ty_dollars: num(m.ty?.unreadable_revenue), ly_dollars: num(m.ly?.unreadable_revenue) }));
         const highCount = issues.filter((i) => i.severity === 'High').length;
+        // Coverage report: matched = linked to a specific message; tagged = the source code's channel field is filled in.
+        const covSum = (rows) => rows.reduce((a, r) => ({ revenue: a.revenue + num(r.revenue), matched: a.matched + num(r.matched_revenue), tagged: a.tagged + num(r.tagged_revenue) }), { revenue: 0, matched: 0, tagged: 0 });
+        const covMonthNos = [...new Set(coverage.map((r) => r.month_no))].sort();
+        const covMonths = covMonthNos.map((m) => { const c = covSum(coverage.filter((r) => r.month_no === m)); return { month_no: m, ...c, matched_share: div(c.matched, c.revenue), tagged_share: div(c.tagged, c.revenue) }; });
+        const covChannels = [...new Set(coverage.map((r) => r.channel))].map((ch) => {
+          const rows = coverage.filter((r) => r.channel === ch), c = covSum(rows);
+          const byMonth = Object.fromEntries(rows.map((r) => [r.month_no, r]));
+          return { channel: ch, ...c, byMonth };
+        }).sort((a, b) => b.revenue - a.revenue);
+        const covAll = covSum(coverage);
+        const pair = (r) => (r && num(r.revenue) ? `${fmt.pct(div(r.matched_revenue, r.revenue))} · ${fmt.pct(div(r.tagged_revenue, r.revenue))}` : '—');
+        const codeTable = (kind, empty) => table([
+          { label: 'Source code', value: (r) => r.code },
+          { label: 'Reads as', value: (r) => r.channel },
+          { label: 'Gifts', value: (r) => num(r.gifts), fmt: fmt.int },
+          { label: 'Raised', value: (r) => num(r.revenue), fmt: fmt.money },
+        ], covCodes.filter((r) => r.kind === kind), empty, 'ef-table-text');
         return [
           lede(`${fmt.pct(1 - share(t, 'unreadable'))} of this year's revenue can be traced to a channel. The ${fmt.pct(share(t, 'unreadable'))} (${fmt.money(num(t.unreadable_revenue))}) that can't comes from gifts with no source code or a code that reads as no channel.${highCount ? ` ${highCount} issue${highCount > 1 ? 's are' : ' is'} rated high below.` : ''} Gifts are counted for the year to date, whatever period is picked.`),
           card('dq-glance', 'Data health at a glance', null, tiles(
@@ -980,6 +997,25 @@
             tile('Gifts linked to a specific message', div(t.linked_gifts, t.gifts), div(l.linked_gifts, l.gifts), fmt.pct, { note: `${fmt.int(num(t.linked_gifts))} of ${fmt.int(num(t.gifts))} gifts` }),
             tile('Coded gifts whose code has a channel field', 1 - div(t.nochannel_gifts, num(t.gifts) - num(t.uncoded_gifts)), 1 - div(l.nochannel_gifts, num(l.gifts) - num(l.uncoded_gifts)), fmt.pct, { note: 'The rest is read from the code\'s naming' }),
             tile('Rented-list codes with a recorded cost', div(acq.rtl_codes_with_cost, acq.rtl_codes), NaN, fmt.pct, { note: `${fmt.int(num(acq.rtl_codes_with_cost))} of ${fmt.int(num(acq.rtl_codes))} RTL codes` }))),
+          card('dq-coverage', 'Coverage report', `This year, ${fmt.pct(div(covAll.matched, covAll.revenue))} of revenue (${fmt.money(covAll.matched)}) is matched to a specific email, text or ad, and ${fmt.pct(div(covAll.tagged, covAll.revenue))} (${fmt.money(covAll.tagged)}) has a source code with its channel field filled in. Matched dollars show what each send raised; tagged dollars let channel and campaign reports work without guessing from the code's words.`,
+            covMonths.length ? el('div', {},
+              scaledBars(covMonths, [{ key: 'matched_share', label: 'Matched to a message', color: PALETTE[0] }, { key: 'tagged_share', label: 'Tagged with a channel', color: PALETTE[1] }], { xLabel: (r) => MONTH_NAMES[num(r.month_no) - 1], tip: (r) => `${MONTH_NAMES[num(r.month_no) - 1]}: matched ${fmt.pct(r.matched_share)} (${fmt.money(r.matched)}), tagged ${fmt.pct(r.tagged_share)} (${fmt.money(r.tagged)}) of ${fmt.money(r.revenue)}`, format: fmt.pct }),
+              dataTable([{ label: 'Month', value: (r) => MONTH_NAMES[num(r.month_no) - 1] }, { label: 'Raised', value: (r) => r.revenue, fmt: fmt.money }, { label: 'Matched', value: (r) => r.matched_share, fmt: fmt.pct }, { label: 'Tagged', value: (r) => r.tagged_share, fmt: fmt.pct }], covMonths)) : el('p', { class: 'ef-empty', text: 'Nothing in this range yet.' }),
+            el('h3', { class: 'ef-h2', text: 'By channel and month' }),
+            el('p', { class: 'ef-sub', text: 'Each cell is matched · tagged, as a share of that channel\'s revenue in the month. Channels are read the same way as the rest of the report.' }),
+            table([
+              { label: 'Channel', value: (r) => r.channel },
+              { label: 'Raised', value: (r) => r.revenue, fmt: fmt.money },
+              { label: 'Matched', value: (r) => div(r.matched, r.revenue), fmt: fmt.pct },
+              { label: 'Tagged', value: (r) => div(r.tagged, r.revenue), fmt: fmt.pct },
+              ...covMonthNos.map((m) => ({ label: MONTH_NAMES[num(m) - 1], value: (r) => pair(r.byMonth[m]) })),
+            ], covChannels, 'Nothing in this range yet.'),
+            el('h3', { class: 'ef-h2', text: 'Top unmatched codes' }),
+            el('p', { class: 'ef-sub', text: 'Source codes with the most dollars this year that are not matched to a message. Website and thank-you-page codes belong here; email, text and rented-list codes usually mean the send is missing or its code differs from the gift\'s.' }),
+            codeTable('unmatched', 'Every coded gift this year is matched to a message.'),
+            el('h3', { class: 'ef-h2', text: 'Top unparsed codes' }),
+            el('p', { class: 'ef-sub', text: 'Source codes with the most dollars this year whose channel field is empty, so the channel is guessed from the code\'s words or not read at all.' }),
+            codeTable('unparsed', 'Every source code used this year has its channel filled in.')),
           card('dq-issues', 'Issues, ranked by what they hide', 'High when an issue touches $100K or 5% of revenue; medium at $10K or 1%; otherwise low. Severity is shown as a word, not just a color. Owners are suggestions for the client team to confirm.', table([
             { label: 'Severity', value: (r) => r.severity, cls: (r) => (r.severity === 'High' ? 'ef-bad' : r.severity === 'Medium' ? 'ef-warn' : '') },
             { label: 'Issue', value: (r) => r.issue },

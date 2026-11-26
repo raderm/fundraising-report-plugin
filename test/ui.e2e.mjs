@@ -120,6 +120,21 @@ const CANNED = [
     { period: 'This year', gifts: 491958, revenue: '6595140.40', uncoded_gifts: '31328', uncoded_revenue: '394560.93', offconv_gifts: '15886', offconv_revenue: '272379.73', nochannel_gifts: '136078', nochannel_revenue: '1817397.70', nocampaign_gifts: '460630', nocampaign_revenue: '6200579.47', linked_gifts: '239387', linked_revenue: '3002669.21', unreadable_gifts: '60000', unreadable_revenue: '501982.38' },
     { period: 'Last year', gifts: 480805, revenue: '6314280.04', uncoded_gifts: '15991', uncoded_revenue: '300417.21', offconv_gifts: '21262', offconv_revenue: '295298.95', nochannel_gifts: '111398', nochannel_revenue: '1309136.16', nocampaign_gifts: '464814', nocampaign_revenue: '6013862.83', linked_gifts: '195743', linked_revenue: '2372991.75', unreadable_gifts: '50000', unreadable_revenue: '459193.34' }]],
   [/^SELECT ch AS channel/, [{ channel: 'Website', codes: 40, gifts: 9000, revenue: '120000.00' }]],
+  // Coverage report (before the DQ_MONTHS pattern, which shares its first words). Rows from liftoff_ecu, October and November 2026.
+  [/^SELECT DATE_FORMAT\(ts, '%m'\) AS month_no, ch AS channel/, [
+    { month_no: '10', channel: 'Email', gifts: 13172, revenue: '210266.80', matched_revenue: '161628.15', tagged_revenue: '113590.78' },
+    { month_no: '10', channel: 'Rented lists', gifts: 16704, revenue: '284472.30', matched_revenue: '0.00', tagged_revenue: '166573.23' },
+    { month_no: '10', channel: 'Text (SMS)', gifts: 14162, revenue: '170543.87', matched_revenue: '164056.46', tagged_revenue: '114112.15' },
+    { month_no: '10', channel: 'No source code', gifts: 1910, revenue: '30505.92', matched_revenue: '0.00', tagged_revenue: '0.00' },
+    { month_no: '11', channel: 'Email', gifts: 9217, revenue: '116400.70', matched_revenue: '76759.68', tagged_revenue: '38137.45' },
+    { month_no: '11', channel: 'Rented lists', gifts: 12640, revenue: '185839.45', matched_revenue: '0.00', tagged_revenue: '18045.71' },
+    { month_no: '11', channel: 'Text (SMS)', gifts: 11450, revenue: '122985.73', matched_revenue: '117881.82', tagged_revenue: '24370.69' },
+    { month_no: '11', channel: 'No source code', gifts: 959, revenue: '12049.42', matched_revenue: '0.00', tagged_revenue: '0.00' }]],
+  [/^WITH cg AS/, [
+    { kind: 'unmatched', code: 'ecu_site_main', channel: 'Website', gifts: 902, revenue: '75232.37' },
+    { kind: 'unmatched', code: 'LOC_RTL_FR_2026.11.01_AES-Last-Hope_B1_C1_Pros_N_Tulip_7I-T1', channel: 'Rented lists', gifts: 3258, revenue: '62904.56' },
+    { kind: 'unparsed', code: 'ecu_site_main', channel: 'Website', gifts: 902, revenue: '75232.37' },
+    { kind: 'unparsed', code: '{{refcode}}', channel: 'Other source code', gifts: 1442, revenue: '12387.90' }]],
   [/^SELECT DATE_FORMAT\(ts, '%m'\)/, [{ month_no: '01', y: 0, revenue: '487549.34', unreadable_revenue: '40000.00', uncoded_revenue: '30000.00' }, { month_no: '01', y: 1, revenue: '384570.00', unreadable_revenue: '30000.00', uncoded_revenue: '20000.00' }]],
   [/^SELECT COALESCE\(NULLIF\(remote_page_name/, [{ page: 'ecu-homepage', gifts: 900, revenue: '61000.00' }]],
   [/^WITH c AS \(SELECT DISTINCT m\.final_source_code_id/, [{ codes: 900, codes_with_cost: 120, codes_bad_cost: 2, codes_with_cpp: 80, cost_total: '480000.00', rtl_codes: 60, rtl_codes_with_cost: 50, rtl_cost: '400000.00' }]],
@@ -200,6 +215,7 @@ for (const tab of ['scorecard', 'email', 'sms', 'ads', 'acquisition', 'dq']) {
   await page.waitForFunction((t) => document.querySelector('#tab h1')?.textContent && !document.querySelector('#loading') && location.hash === '#' + t, tab);
   if (tab === 'ads') await page.waitForFunction(() => /\$\d.*–\$\d/.test(document.querySelector('#ads-range')?.textContent || ''), null, { timeout: 8000 });
   if (tab === 'acquisition') await page.waitForFunction(() => /Bought lists/.test(document.querySelector('#acq-paid')?.textContent || ''), null, { timeout: 8000 });
+  if (tab === 'dq') out.coverage = await page.textContent('#dq-coverage .ef-sub');
   out[tab] = (await page.textContent('#tab .ef-lede')) || (await page.textContent('#tab'));
   await page.screenshot({ path: `/tmp/ui-${tab}.png`, fullPage: true });
 }

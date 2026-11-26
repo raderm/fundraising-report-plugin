@@ -63,6 +63,18 @@ const DQ_MONTHS = `SELECT DATE_FORMAT(ts, '%m') AS month_no, YEAR(CURDATE()) - Y
  */
 const DQ_CODE_FLAWS = `SELECT kind, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue, COUNT(DISTINCT transaction_source_code) AS codes, MAX(transaction_source_code) AS example FROM (SELECT transaction_source_code, amount, CASE WHEN LOWER(transaction_source_code) REGEXP '\\\\{\\\\{|\\\\}\\\\}|%%|\\\\*\\\\||\\\\|\\\\*|\\\\[\\\\[|\\\\$\\\\{|<%|%7b' THEN 'merge' WHEN LOWER(transaction_source_code) REGEXP '(^|[_-])(v[0-9]+|ctrl|control|test|variant[0-9a-z]*)($|[_-])' THEN 'variant' END AS kind FROM (${GIFT_ROWS} WHERE m.ts >= ${YEAR_START} AND m.ts < ${TOMORROW}) g WHERE COALESCE(transaction_source_code, '') <> '') z WHERE kind IS NOT NULL GROUP BY kind`;
 
+/**
+ * Coverage report: this year's gifts by month and channel, with the dollars matched to a specific
+ * message (final_message_id) and the dollars whose source code has its channel field filled in.
+ */
+const DQ_COVERAGE = `SELECT DATE_FORMAT(ts, '%m') AS month_no, ch AS channel, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue, ROUND(COALESCE(SUM(CASE WHEN final_message_id IS NOT NULL THEN amount END), 0), 2) AS matched_revenue, ROUND(COALESCE(SUM(CASE WHEN ${CODED} AND COALESCE(source_code_channel, '') <> '' THEN amount END), 0), 2) AS tagged_revenue FROM (${GIFTS_WITH_CHANNEL}) g WHERE ${THIS_YEAR} GROUP BY 1, 2 ORDER BY 1, 2`;
+
+/**
+ * Coverage report: the 15 source codes this year with the most dollars not matched to a message
+ * (kind 'unmatched') and the 15 with the most dollars whose channel field is empty (kind 'unparsed').
+ */
+const DQ_COVERAGE_CODES = `WITH cg AS (SELECT transaction_source_code AS code, ch, amount, final_message_id, source_code_channel FROM (${GIFTS_WITH_CHANNEL}) y WHERE ${THIS_YEAR} AND ${CODED}), c AS (SELECT 'unmatched' AS kind, code, MIN(ch) AS channel, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue FROM cg WHERE final_message_id IS NULL GROUP BY code UNION ALL SELECT 'unparsed', code, MIN(ch), COUNT(*), ROUND(SUM(amount), 2) FROM cg WHERE COALESCE(source_code_channel, '') = '' GROUP BY code), r AS (SELECT c.*, ROW_NUMBER() OVER (PARTITION BY kind ORDER BY revenue DESC) AS rn FROM c) SELECT kind, code, channel, gifts, revenue FROM r WHERE rn <= 15 ORDER BY kind, revenue DESC`;
+
 /** ActBlue (or other) pages taking gifts that have no source code. */
 const DQ_PAGES = `SELECT COALESCE(NULLIF(remote_page_name, ''), '(no page name)') AS page, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue FROM (${GIFT_ROWS}) g WHERE ${THIS_YEAR} AND NOT ${CODED} GROUP BY 1 ORDER BY revenue DESC LIMIT 10`;
 
@@ -182,5 +194,5 @@ const REC_KEPT = (ty, ly) => {
   return `SELECT SUM(a_ty) AS base_ty, SUM(a_ty AND k_ty) AS kept_ty, SUM(a_ly) AS base_ly, SUM(a_ly AND k_ly) AS kept_ly FROM (SELECT person_id, ${one('ty', ty)}, ${one('ly', ly)} FROM ${REC} AND ts >= '${jan(ly)}' - INTERVAL 35 DAY GROUP BY person_id) z`;
 };
 
-window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_CODE_FLAWS, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS, ACQ_BOUGHT_LISTS, ADS_CODED_GIFTS, RETENTION, REC, REC_PEOPLE, REC_FLOW, REC_COHORTS, REC_CHANNELS, REC_KEPT };
+window.FR_SQL = { REF, GIFT_ROWS, CHANNEL_CASE, YEAR_START, TOMORROW, SCORECARD_CHANNELS, SCORECARD_MONTHS, GIFTS_WITH_CHANNEL, THIS_YEAR, LAST_YEAR, CODED, CONVENTION, DQ_SUMMARY, DQ_OFF_CONVENTION, DQ_MONTHS, DQ_CODE_FLAWS, DQ_COVERAGE, DQ_COVERAGE_CODES, DQ_PAGES, DQ_ACQUISITION_COST, SC_CHANNEL_OF_MESSAGE, SCORECARD_COST, SCORECARD_LIST_COST, SCORECARD_NEW_DONORS, SCORECARD_LIST_MONTHS, SCORECARD_LIST_STATUS, ACQ_FIRSTS, ACQ_WITH_TOTALS, ACQ_MEASURES, ACQ_PERIOD, ACQ_MONTHLY, ACQ_CODES, ACQ_COST, ACQ_SIGNUPS, ACQ_BOUGHT_LISTS, ADS_CODED_GIFTS, RETENTION, REC, REC_PEOPLE, REC_FLOW, REC_COHORTS, REC_CHANNELS, REC_KEPT };
 })();
