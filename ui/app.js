@@ -307,6 +307,33 @@
     return state.cache.get(cacheKey);
   }
 
+  // The account's email platform people table (acoustic_<id>_person), found by name once per account.
+  // Queries over it fail like any optional query when the account has none.
+  function peopleTable() {
+    const cacheKey = JSON.stringify([state.account, 'peopleTable']);
+    if (!state.cache.has(cacheKey)) {
+      const p = call('sql', { command: 'tables', filter: '^acoustic_[a-z0-9]+_person$' }).then((res) => {
+        const names = ((res.result || {}).tables || []).map((t) => (typeof t === 'string' ? t : t.name || t.table_name || Object.values(t)[0]));
+        const t = names.find((n) => /^acoustic_[a-z0-9]+_person$/.test(n));
+        if (!t) throw new Error('No email platform people table in this account');
+        return t;
+      });
+      p.catch(() => state.cache.delete(cacheKey));
+      state.cache.set(cacheKey, p);
+    }
+    return state.cache.get(cacheKey);
+  }
+  // Queries over the people table: with the period's windows (w) or without.
+  function queryPeople(name, w) {
+    const cacheKey = JSON.stringify([state.account, 'sql', name, w && w.ty, w && w.ly]);
+    if (!state.cache.has(cacheKey)) {
+      const p = peopleTable().then((t) => sql(w ? Q[name](w.ty, w.ly, t) : Q[name](t)));
+      p.catch(() => state.cache.delete(cacheKey));
+      state.cache.set(cacheKey, p);
+    }
+    return state.cache.get(cacheKey);
+  }
+
   // Queries that take the picked period's windows (dates only; checked in scorecard/queries.js).
   function queryWith(name, w) {
     const cacheKey = JSON.stringify([state.account, 'sql', name, w.ty, w.ly]);
@@ -621,7 +648,7 @@
 
     ads: {
       title: 'Advertising',
-      async load(w) { const [[ty, ly], signups] = await Promise.all([both('advertising', w), queryWith('ACQ_SIGNUPS', w).catch(() => null)]); return { ty, ly, signups, w }; },
+      async load(w) { const [[ty, ly], signups] = await Promise.all([both('advertising', w), queryPeople('ACQ_SIGNUPS', w).catch(() => null)]); return { ty, ly, signups, w }; },
       render({ ty, ly, signups, w }) {
         const k = ty.kpis[0] || {}, l = ly.kpis[0] || {};
         const rpd = (r) => div(r.revenue, r.spend);
@@ -701,7 +728,7 @@
         const [channels, months, cost, listCost, newDonors, listMonths, listStatus] = await Promise.all([
           query('SCORECARD_CHANNELS'), query('SCORECARD_MONTHS'),
           optional('SCORECARD_COST'), optional('SCORECARD_LIST_COST'), optional('SCORECARD_NEW_DONORS'),
-          optional('SCORECARD_LIST_MONTHS'), optional('SCORECARD_LIST_STATUS')]);
+          queryPeople('SCORECARD_LIST_MONTHS').catch(() => []), queryPeople('SCORECARD_LIST_STATUS').catch(() => [])]);
         return { channels, months, cost, listCost: listCost[0] || {}, newDonors, listMonths, listStatus };
       },
       render({ channels, months, cost, listCost, newDonors, listMonths, listStatus }) {
@@ -794,9 +821,9 @@
       async load(w) {
         const optional = (p) => p.catch(() => null);
         const [period, monthly, codes, cost, signups] = await Promise.all([
-          queryWith('ACQ_PERIOD', w), query('ACQ_MONTHLY'), optional(queryWith('ACQ_CODES', w)), optional(queryWith('ACQ_COST', w)), optional(queryWith('ACQ_SIGNUPS', w))]);
+          queryWith('ACQ_PERIOD', w), query('ACQ_MONTHLY'), optional(queryWith('ACQ_CODES', w)), optional(queryWith('ACQ_COST', w)), optional(queryPeople('ACQ_SIGNUPS', w))]);
         // Bought lists are slow, so the tab does not wait for them.
-        const bought = queryWith('ACQ_BOUGHT_LISTS', w).catch(() => null);
+        const bought = queryPeople('ACQ_BOUGHT_LISTS', w).catch(() => null);
         return { period, monthly, codes: codes || [], cost: cost || [], signups, bought, w };
       },
       render({ period, monthly, codes, cost, signups, bought, w }) {

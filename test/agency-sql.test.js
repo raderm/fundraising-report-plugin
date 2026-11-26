@@ -24,7 +24,7 @@ test('CREATE TABLE uses the MariaDB types engine9 would use', () => {
 
 test('text is only ever sent as a hex literal', () => {
   const nasty = "O'Brien \\'; DROP TABLE person; -- 🚀";
-  const sql = insertSql(note, { body: nasty, report_path: 'r', section: 's' }, 'pat@frakture.com');
+  const sql = insertSql(note, { body: nasty, report_path: 'r', section: 's' }, 'pat@example.com');
   assert.ok(!sql.includes('DROP'));
   assert.ok(!sql.includes("O'Brien"));
   assert.ok(unhex(sql).includes(nasty));
@@ -32,9 +32,9 @@ test('text is only ever sent as a hex literal', () => {
 });
 
 test('insert sets id and author itself', () => {
-  const sql = insertSql(note, { body: 'x' }, 'pat@frakture.com');
+  const sql = insertSql(note, { body: 'x' }, 'pat@example.com');
   assert.match(sql, /\(`id`, `body`, `author`\) VALUES \(UUID_v7\(\), /);
-  assert.ok(unhex(sql).includes('pat@frakture.com'));
+  assert.ok(unhex(sql).includes('pat@example.com'));
   for (const col of ['id', 'author', 'created_at', 'modified_at']) {
     assert.throws(() => insertSql(note, { [col]: 'x' }, 'me'), AgencyValueError);
   }

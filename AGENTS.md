@@ -27,7 +27,7 @@ import('./agency/sql.js').then(async ({ insertSql }) => {
   console.log(insertSql(summary, {
     report_path: 'fundraising-report-plugin/reports:reports:all_donations',
     section: 'transactions', period: 'ytd', period_start: '2026-01-01', period_end: '2026-11-26',
-    headline: '…', body: '…', figures: { revenue: 6595140.4 }, status: 'draft', author_type: 'agent',
+    headline: '…', body: '…', figures: { revenue: 1234567.89 }, status: 'draft', author_type: 'agent',
   }, '<the signed-in person, from the MCP user tool>'));
 })"
 ```
