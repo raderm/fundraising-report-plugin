@@ -61,6 +61,18 @@ export const DQ_MONTHS = `SELECT DATE_FORMAT(ts, '%m') AS month_no, YEAR(CURDATE
  */
 export const DQ_CODE_FLAWS = `SELECT kind, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue, COUNT(DISTINCT transaction_source_code) AS codes, MAX(transaction_source_code) AS example FROM (SELECT transaction_source_code, amount, CASE WHEN LOWER(transaction_source_code) REGEXP '\\\\{\\\\{|\\\\}\\\\}|%%|\\\\*\\\\||\\\\|\\\\*|\\\\[\\\\[|\\\\$\\\\{|<%|%7b' THEN 'merge' WHEN LOWER(transaction_source_code) REGEXP '(^|[_-])(v[0-9]+|ctrl|control|test|variant[0-9a-z]*)($|[_-])' THEN 'variant' END AS kind FROM (${GIFT_ROWS} WHERE m.ts >= ${YEAR_START} AND m.ts < ${TOMORROW}) g WHERE COALESCE(transaction_source_code, '') <> '') z WHERE kind IS NOT NULL GROUP BY kind`;
 
+/**
+ * Coverage report: this year's gifts by month and channel, with the dollars matched to a specific
+ * message (final_message_id) and the dollars whose source code has its channel field filled in.
+ */
+export const DQ_COVERAGE = `SELECT DATE_FORMAT(ts, '%m') AS month_no, ch AS channel, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue, ROUND(COALESCE(SUM(CASE WHEN final_message_id IS NOT NULL THEN amount END), 0), 2) AS matched_revenue, ROUND(COALESCE(SUM(CASE WHEN ${CODED} AND COALESCE(source_code_channel, '') <> '' THEN amount END), 0), 2) AS tagged_revenue FROM (${GIFTS_WITH_CHANNEL}) g WHERE ${THIS_YEAR} GROUP BY 1, 2 ORDER BY 1, 2`;
+
+/**
+ * Coverage report: the 15 source codes this year with the most dollars not matched to a message
+ * (kind 'unmatched') and the 15 with the most dollars whose channel field is empty (kind 'unparsed').
+ */
+export const DQ_COVERAGE_CODES = `WITH cg AS (SELECT transaction_source_code AS code, ch, amount, final_message_id, source_code_channel FROM (${GIFTS_WITH_CHANNEL}) y WHERE ${THIS_YEAR} AND ${CODED}), c AS (SELECT 'unmatched' AS kind, code, MIN(ch) AS channel, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue FROM cg WHERE final_message_id IS NULL GROUP BY code UNION ALL SELECT 'unparsed', code, MIN(ch), COUNT(*), ROUND(SUM(amount), 2) FROM cg WHERE COALESCE(source_code_channel, '') = '' GROUP BY code), r AS (SELECT c.*, ROW_NUMBER() OVER (PARTITION BY kind ORDER BY revenue DESC) AS rn FROM c) SELECT kind, code, channel, gifts, revenue FROM r WHERE rn <= 15 ORDER BY kind, revenue DESC`;
+
 /** ActBlue (or other) pages taking gifts that have no source code. */
 export const DQ_PAGES = `SELECT COALESCE(NULLIF(remote_page_name, ''), '(no page name)') AS page, COUNT(*) AS gifts, ROUND(SUM(amount), 2) AS revenue FROM (${GIFT_ROWS}) g WHERE ${THIS_YEAR} AND NOT ${CODED} GROUP BY 1 ORDER BY revenue DESC LIMIT 10`;
 
